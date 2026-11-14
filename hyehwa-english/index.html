@@ -132,10 +132,11 @@ section.vocab h2{font-size:1rem;margin:0}
   </div>
 
   <section class="vocab">
-    <div class="vh"><h2>내 단어장</h2><div class="row"><button class="btn ghost" id="quizStart" type="button">복습 퀴즈</button><button class="btn ghost" id="pronStart" type="button">발음 연습</button><button class="btn ghost" id="focusStart" type="button">단어로 대화</button><button class="btn ghost" id="logStart" type="button">연습 기록</button><button class="btn ghost" id="dailyStart" type="button">오늘의 표현</button><button class="btn ghost" id="phrasesStart" type="button">생활 표현집</button></div></div>
+    <div class="vh"><h2>내 단어장</h2><div class="row"><button class="btn ghost" id="quizStart" type="button">복습 퀴즈</button><button class="btn ghost" id="fillStart" type="button">빈칸 퀴즈</button><button class="btn ghost" id="pronStart" type="button">발음 연습</button><button class="btn ghost" id="focusStart" type="button">단어로 대화</button><button class="btn ghost" id="logStart" type="button">연습 기록</button><button class="btn ghost" id="dailyStart" type="button">오늘의 표현</button><button class="btn ghost" id="phrasesStart" type="button">생활 표현집</button></div></div>
     <div class="quiz" id="rec" hidden></div>
     <ul class="vl" id="vocab"></ul>
     <div class="quiz" id="quiz" hidden></div>
+    <div class="quiz" id="fill" hidden></div>
     <div class="quiz" id="pron" hidden></div>
     <div class="quiz" id="log" hidden></div>
     <div class="quiz" id="daily" hidden></div>
@@ -1459,6 +1460,124 @@ Now respond to the learner's last message.`;
     go.onclick=()=>{startQuiz(list.map(o=>o.p));$('quiz').scrollIntoView({behavior:'smooth',block:'nearest'})};
     box.appendChild(go);
   }
+
+  /* ---- 빈칸 채우기 퀴즈 ---- */
+  let FQ=null;
+  function fillItems(){
+    const out=[];
+    pairs().forEach(p=>{
+      const ex=exMap[p.en.toLowerCase()];if(!ex)return;
+      const s=ex.en,low=s.toLowerCase(),w=p.en.toLowerCase();
+      let idx=-1,from=0;
+      while(true){
+        const i=low.indexOf(w,from);if(i<0)break;
+        const a=i>0?low[i-1]:' ',b=i+w.length<low.length?low[i+w.length]:' ';
+        if(!/[a-z]/.test(a)&&!/[a-z]/.test(b)){idx=i;break}
+        from=i+1;
+      }
+      if(idx<0)return;
+      out.push({p:p,ex:ex,sentence:s.slice(0,idx)+'____'+s.slice(idx+w.length)});
+    });
+    return out;
+  }
+  async function fetchExamples(words){
+    try{
+      const r=await sample.json(`${levelGuide()}\nFor each English word or phrase below, write ONE example sentence suited to this learner, using common words only and at most 8 words, and give its Korean translation. The sentence must contain the word or phrase exactly as given. Words: ${JSON.stringify(words)}\nReturn only a JSON object that maps each word, exactly as given, to an object with two string fields: en (the example sentence) and ko (the Korean translation).`,{modelTier:'quick'});
+      const low={};
+      if(r&&typeof r==='object')Object.keys(r).forEach(k=>{low[k.toLowerCase()]=r[k]});
+      let n=0;
+      words.forEach(w=>{
+        const v=low[w.toLowerCase()];
+        if(v&&typeof v.en==='string'&&typeof v.ko==='string'){exMap[w.toLowerCase()]={en:v.en.slice(0,160),ko:v.ko.slice(0,160)};n++}
+      });
+      store.set('hw.ex',exMap);
+      return n?'':'예문을 가져오지 못했어요. 다시 눌러 주세요.';
+    }catch(e){
+      return e&&e.code==='not_granted'?'Claude 연결을 허용해야 예문을 만들 수 있어요.':'예문을 가져오지 못했어요. 다시 눌러 주세요.';
+    }
+  }
+  function fillShell(){
+    const box=$('fill');box.hidden=false;box.textContent='';
+    const top=el('div','meta');top.appendChild(el('b',null,'빈칸 채우기'));
+    const close=el('button','mini','닫기');close.onclick=()=>{if(tts)tts.stop().catch(()=>{});box.hidden=true;FQ=null};
+    top.appendChild(close);box.appendChild(top);
+    return box;
+  }
+  async function startFill(){
+    let box=fillShell();
+    let items=fillItems();
+    if(items.length<3&&sample){
+      const need=recList().map(o=>o.p.en).filter(w=>!exMap[w.toLowerCase()]);
+      const extra=pairs().map(p=>p.en).filter(w=>!exMap[w.toLowerCase()]&&need.indexOf(w)<0);
+      const words=need.concat(extra).slice(0,6);
+      if(words.length){
+        box.appendChild(el('div',null,'예문을 준비하고 있어요...'));
+        const err=await fetchExamples(words);
+        renderRec();
+        if($('fill').hidden)return;
+        items=fillItems();
+        if(err&&items.length<2){box=fillShell();box.appendChild(el('div','notice',err));return}
+      }
+    }
+    if(items.length<2){
+      box=fillShell();
+      box.appendChild(el('div',null,'빈칸 퀴즈는 예문이 있는 단어가 2개 이상 있어야 해요. 단어장에 단어를 더 담아 주세요.'));
+      return;
+    }
+    FQ={items:shuffle(items).slice(0,5),i:0,right:0,wrong:[],logged:false};
+    renderFill();
+  }
+  function renderFill(){
+    const box=fillShell();
+    const n=FQ.items.length;
+    if(FQ.i>=n){
+      if(!FQ.logged){FQ.logged=true;logEv('fill',{r:FQ.right,n:n});renderRec()}
+      box.appendChild(el('div','score',FQ.right+' / '+n));
+      box.appendChild(el('div',null,FQ.wrong.length?'틀린 문장을 한 번 더 읽어 보세요.':'모두 맞혔어요. 잘하셨어요.'));
+      if(FQ.wrong.length){
+        const ul=el('ul','vl');
+        FQ.wrong.forEach(it=>{
+          const li=el('li');const sp=el('span');
+          sp.appendChild(el('b',null,it.p.en));sp.appendChild(document.createTextNode(' = '+it.p.ko));
+          sp.appendChild(el('br'));sp.appendChild(el('span','small',it.ex.en));
+          li.appendChild(sp);ul.appendChild(li);
+        });
+        box.appendChild(ul);
+      }
+      const again=el('button','btn','다시 하기');again.onclick=startFill;
+      box.appendChild(again);
+      return;
+    }
+    const it=FQ.items[FQ.i];
+    const bar=el('div','bar');const fill=el('i');fill.style.width=(FQ.i/n*100)+'%';bar.appendChild(fill);box.appendChild(bar);
+    box.appendChild(el('div','meta',(FQ.i+1)+' / '+n+'  빈칸에 알맞은 단어를 고르세요'));
+    box.appendChild(el('div','q',it.sentence));
+    box.appendChild(el('div','small',it.ex.ko));
+    const others=shuffle(pairs().filter(x=>x.key!==it.p.key).map(x=>x.en).filter(w=>w.toLowerCase()!==it.p.en.toLowerCase()));
+    const opts=shuffle([it.p.en].concat(others.slice(0,3)));
+    const wrap=el('div','opts');const fb=el('div');
+    let answered=false;
+    opts.forEach(o=>{
+      const b=el('button','opt',o);
+      b.onclick=()=>{
+        if(answered)return;answered=true;
+        const st=stats[it.p.key]||(stats[it.p.key]={right:0,wrong:0});
+        st.t=dstr(new Date());
+        if(o===it.p.en){FQ.right++;st.right++;b.classList.add('good')}
+        else{st.wrong++;FQ.wrong.push(it);b.classList.add('bad');wrap.querySelectorAll('.opt').forEach(x=>{if(x.textContent===it.p.en)x.classList.add('good')})}
+        store.set('hw.stats',stats);
+        wrap.querySelectorAll('.opt').forEach(x=>x.disabled=true);
+        fb.textContent=(o===it.p.en?'정답! ':'정답: '+it.p.en+'. ')+it.ex.en;
+        if(tts){const l=el('button','mini','듣기');l.onclick=()=>say(it.ex.en,level==='beginner'?0.85:1);box.appendChild(l)}
+        FQ.i++;
+        const nx=el('button','btn',FQ.i>=n?'결과 보기':'다음');
+        nx.onclick=renderFill;box.appendChild(nx);nx.focus();
+      };
+      wrap.appendChild(b);
+    });
+    box.appendChild(wrap);box.appendChild(fb);
+  }
+  $('fillStart').onclick=startFill;
 
   /* ---- 복습 추이 ---- */
   function drawReviewTrend(box){
