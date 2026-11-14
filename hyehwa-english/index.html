@@ -83,6 +83,7 @@ section.vocab h2{font-size:1rem;margin:0}
 .small{font-size:.8rem;color:var(--muted)}
 .focus{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;align-items:flex-start}
 .focus .chip{cursor:default}
+.focus .tiles,.focus .vl{width:100%}
 .chip.got{background:var(--accent);color:var(--accent-ink);border-color:transparent}
 .pl li{flex-wrap:wrap;align-items:center}
 .pl .acts{display:flex;gap:12px;flex-wrap:wrap}
@@ -116,6 +117,7 @@ section.vocab h2{font-size:1rem;margin:0}
   </header>
 
   <div id="notice" class="notice" hidden></div>
+  <div class="focus" id="pc" hidden></div>
   <div class="focus" id="rp" hidden></div>
   <div class="focus" id="focus" hidden></div>
   <div id="thread" aria-live="polite"></div>
@@ -306,6 +308,7 @@ Now respond to the learner's last message.`;
   async function send(){
     const input=$('input');const text=input.value.trim();
     if(!text||busy)return;
+    if(pc){pcAnswer(text);return}
     if(!sample){showNotice('이 화면에서는 Claude 연결을 쓸 수 없어요. claude.ai에서 열어 주세요.');return}
     if(dict)try{dict.stop()}catch(e){}
     input.value='';autoGrow();
@@ -1151,6 +1154,7 @@ Now respond to the learner's last message.`;
     } else {
       box.appendChild(el('div','small','정책을 등록하면 질문의 [정책명] 자리에 그 이름이 들어가요. 지금은 this program으로 표시돼요.'));
     }
+    const pcb=el('button','btn','모의 기자회견 시작 (질문 6개)');pcb.onclick=startPc;box.appendChild(pcb);
     QCARDS.forEach((g,gi)=>{
       const d=el('details');if(gi===0)d.open=true;
       d.appendChild(el('summary',null,g.g));
@@ -1225,7 +1229,115 @@ Now respond to the learner's last message.`;
     box.appendChild(ko);box.appendChild(en);box.appendChild(ds);box.appendChild(add);
   }
 
-  renderControls();renderStarters();renderThread();renderVocab();renderFocus();renderRp();
+  /* ---- 모의 기자회견 ---- */
+  let pc=null, pcRes=null, pcLast=null;
+  const PC_ACK=['Thank you.','I see.','Understood.','Interesting.','Okay.','Thank you for that.'];
+  function pcPick(name){
+    const gs=QCARDS.filter(g=>!g.items[0].safe);
+    const drop=1+Math.floor(Math.random()*4);
+    return gs.filter((g,i)=>i!==drop).map(g=>{
+      const it=g.items[Math.floor(Math.random()*g.items.length)];
+      return it.q.split('[정책명]').join(name);
+    });
+  }
+  function startPc(){
+    if(busy){showNotice('혜화가 답하는 중이에요. 잠시 뒤에 다시 눌러 주세요.');return}
+    if(!sample){showNotice('이 화면에서는 Claude 연결을 쓸 수 없어서 평가를 받을 수 없어요.');return}
+    const p=policies[cardPol];const name=p?polName(p):'this program';
+    rp=null;store.set('hw.rp',null);renderRp();
+    pcRes=null;
+    pc={name:name,qs:pcPick(name),answers:[],i:0};
+    const first=`Good afternoon. Thank you for taking my questions about ${name}. Let's get started. ${pc.qs[0]}`;
+    msgs=[{role:'tutor',text:first}];
+    persist();hideNotice();renderPc();renderThread();
+    if(speakOn)speak(first);
+    setTimeout(()=>{$('pc').scrollIntoView({behavior:'smooth',block:'start'});$('input').focus({preventScroll:true})},80);
+  }
+  function pcAnswer(text){
+    const input=$('input');input.value='';autoGrow();
+    hideNotice();
+    msgs.push({role:'me',text:text});
+    pc.answers.push(text);
+    logEv('chat',{said:text.slice(0,120),fix:''});
+    if(pc.i+1<pc.qs.length){
+      pc.i++;
+      const next=PC_ACK[Math.floor(Math.random()*PC_ACK.length)]+' '+pc.qs[pc.i];
+      msgs.push({role:'tutor',text:next});
+      persist();renderPc();renderThread();
+      if(speakOn)speak(next);
+    } else {
+      msgs.push({role:'tutor',text:'Thank you very much for your time. That concludes our press conference.'});
+      pcLast={name:pc.name,qs:pc.qs,answers:pc.answers};
+      pc=null;persist();renderThread();pcEvaluate(pcLast);
+    }
+  }
+  async function pcEvaluate(s){
+    pcRes={loading:true};renderPc();
+    const pairs=s.qs.map((q,i)=>'Q'+(i+1)+': '+q+'\nA'+(i+1)+': '+(s.answers[i]||'(no answer)')).join('\n\n');
+    const prompt=`You are an English coach for a Korean local-government official who just practiced a mock press conference with a foreign journalist about the policy named ${s.name}. Below are the journalist's questions and the official's answers.\n\n${pairs}\n\nEvaluate the answers for a non-native speaker in a formal public setting. Return only a JSON object with these fields: scores (an object with integer fields clarity, naturalness and diplomacy, each from 1 to 5), summary (two short sentences in Korean), strengths (an array of 2 short Korean strings), improvements (an array of 2 or 3 short Korean strings), items (an array with one object per question, each with q as the question number, better as an improved English answer that keeps the speaker's own facts and never invents figures or details, and tip as one short Korean tip).`;
+    try{
+      const r=await sample.json(prompt,{cache:false});
+      if(!r||typeof r!=='object'||!r.scores)throw new Error('bad');
+      pcRes={data:r};
+      const sc=r.scores;const avg=Math.round(((+sc.clarity||0)+(+sc.naturalness||0)+(+sc.diplomacy||0))/3*10)/10;
+      logEv('pc',{s:avg});
+    }catch(e){pcRes={error:true}}
+    renderPc();
+  }
+  function renderPc(){
+    const box=$('pc');box.textContent='';
+    if(pc){
+      box.hidden=false;
+      box.appendChild(el('div','small','모의 기자회견 · 질문 '+(pc.i+1)+' / '+pc.qs.length+' · '+pc.name+'. 질문마다 영어로 답하세요. 끝나면 한 번에 평가해 드려요.'));
+      const stop=el('button','mini','중단하기');
+      stop.onclick=()=>{pc=null;renderPc()};
+      box.appendChild(stop);return;
+    }
+    if(!pcRes){box.hidden=true;return}
+    box.hidden=false;
+    const close=el('button','mini','닫기');close.onclick=()=>{pcRes=null;renderPc()};
+    if(pcRes.loading){box.appendChild(el('div',null,'기자회견 평가를 정리하는 중이에요...'));return}
+    if(pcRes.error){
+      box.appendChild(el('div','notice','평가를 가져오지 못했어요.'));
+      const r=el('button','btn ghost','다시 시도');r.onclick=()=>pcEvaluate(pcLast);
+      box.appendChild(r);box.appendChild(close);return;
+    }
+    const d=pcRes.data;
+    box.appendChild(el('b',null,'모의 기자회견 결과'));
+    const sc=d.scores||{};const tiles=el('div','tiles');
+    [['명료함','clarity'],['자연스러움','naturalness'],['외교적 표현','diplomacy']].forEach(a=>{
+      const t=el('div','tile');t.appendChild(el('span','small',a[0]));t.appendChild(el('b',null,(Math.max(0,Math.min(5,Number(sc[a[1]])||0)))+' / 5'));tiles.appendChild(t);
+    });
+    box.appendChild(tiles);
+    if(typeof d.summary==='string')box.appendChild(el('div',null,d.summary));
+    const lists=[['잘한 점',d.strengths],['고칠 점',d.improvements]];
+    lists.forEach(a=>{
+      if(!Array.isArray(a[1])||!a[1].length)return;
+      box.appendChild(el('div','small',a[0]));
+      const ul=el('ul','vl');
+      a[1].slice(0,4).forEach(t=>{const li=el('li');li.appendChild(el('span',null,String(t)));ul.appendChild(li)});
+      box.appendChild(ul);
+    });
+    box.appendChild(el('div','small','질문별 답변과 개선 예시'));
+    const ul=el('ul','vl');
+    pcLast.qs.forEach((q,i)=>{
+      const it=(Array.isArray(d.items)?d.items:[]).find(x=>Number(x.q)===i+1)||{};
+      const li=el('li');const sp=el('span');
+      sp.appendChild(el('span','small','Q'+(i+1)+'. '+q));sp.appendChild(el('br'));
+      sp.appendChild(el('span','small','내 답변: '+(pcLast.answers[i]||'-')));
+      if(typeof it.better==='string'){sp.appendChild(el('br'));sp.appendChild(el('span','en',it.better))}
+      if(typeof it.tip==='string'){sp.appendChild(el('br'));sp.appendChild(el('span','small',it.tip))}
+      li.appendChild(sp);
+      if(tts&&typeof it.better==='string'){const l=el('button','mini','듣기');l.onclick=()=>say(it.better,1);li.appendChild(l)}
+      ul.appendChild(li);
+    });
+    box.appendChild(ul);
+    const row=el('div','row');
+    const again=el('button','btn','다시 하기');again.onclick=startPc;
+    row.appendChild(again);row.appendChild(close);box.appendChild(row);
+  }
+
+  renderControls();renderStarters();renderThread();renderVocab();renderFocus();renderRp();renderPc();
 
   if(window.claude&&window.claude.use){
     window.claude.use('sample').then(s=>{
