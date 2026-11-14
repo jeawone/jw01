@@ -1389,6 +1389,30 @@ Now respond to the learner's last message.`;
     row.appendChild(again);row.appendChild(sa);row.appendChild(nv);row.appendChild(tr);row.appendChild(close);box.appendChild(row);
   }
 
+  /* ---- 추천 단어 예문 ---- */
+  let exMap=store.get('hw.ex',{});
+  async function makeExamples(list,eb){
+    eb.disabled=true;eb.textContent='예문을 만드는 중...';
+    const words=list.map(o=>o.p.en).filter(w=>!exMap[w.toLowerCase()]);
+    let err='';
+    try{
+      const r=await sample.json(`${levelGuide()}\nFor each English word or phrase below, write ONE example sentence suited to this learner, using common words only and at most 8 words, and give its Korean translation. Words: ${JSON.stringify(words)}\nReturn only a JSON object that maps each word, exactly as given, to an object with two string fields: en (the example sentence) and ko (the Korean translation).`,{modelTier:'quick'});
+      const low={};
+      if(r&&typeof r==='object')Object.keys(r).forEach(k=>{low[k.toLowerCase()]=r[k]});
+      let n=0;
+      words.forEach(w=>{
+        const v=low[w.toLowerCase()];
+        if(v&&typeof v.en==='string'&&typeof v.ko==='string'){exMap[w.toLowerCase()]={en:v.en.slice(0,160),ko:v.ko.slice(0,160)};n++}
+      });
+      store.set('hw.ex',exMap);
+      if(!n)err='예문을 가져오지 못했어요. 다시 눌러 주세요.';
+    }catch(e){
+      err=e&&e.code==='not_granted'?'Claude 연결을 허용해야 예문을 볼 수 있어요.':'예문을 가져오지 못했어요. 다시 눌러 주세요.';
+    }
+    renderRec();
+    if(err)$('rec').appendChild(el('div','notice',err));
+  }
+
   /* ---- 오늘의 복습 추천 ---- */
   function recList(){
     const today=new Date();
@@ -1417,9 +1441,20 @@ Now respond to the learner's last message.`;
     list.forEach(o=>{
       const li=el('li');const sp=el('span');
       sp.appendChild(el('b',null,o.p.en));sp.appendChild(document.createTextNode(' = '+o.p.ko));
+      const ex=exMap[o.p.en.toLowerCase()];
+      if(ex){
+        sp.appendChild(el('br'));sp.appendChild(el('span',null,ex.en));
+        sp.appendChild(el('br'));sp.appendChild(el('span','small',ex.ko));
+        if(tts){const l=el('button','mini','듣기');l.onclick=()=>say(ex.en,level==='beginner'?0.85:1);sp.appendChild(document.createTextNode(' '));sp.appendChild(l)}
+      }
       li.appendChild(sp);li.appendChild(el('span','small',o.why));ul.appendChild(li);
     });
     box.appendChild(ul);
+    if(sample&&list.some(o=>!exMap[o.p.en.toLowerCase()])){
+      const eb=el('button','btn ghost','예문 보기');
+      eb.onclick=()=>makeExamples(list,eb);
+      box.appendChild(eb);
+    }
     const go=el('button','btn','추천 단어로 퀴즈 시작');
     go.onclick=()=>{startQuiz(list.map(o=>o.p));$('quiz').scrollIntoView({behavior:'smooth',block:'nearest'})};
     box.appendChild(go);
@@ -1645,10 +1680,10 @@ Now respond to the learner's last message.`;
 
   if(window.claude&&window.claude.use){
     window.claude.use('sample').then(s=>{
-      sample=s;
+      sample=s;renderRec();
       if(!s)showNotice('이 화면에서는 Claude 연결을 쓸 수 없어요. claude.ai에서 열어 주세요.');
     }).catch(()=>{});
-    window.claude.use('tts').then(t=>{tts=t;renderControls();renderThread()}).catch(()=>{});
+    window.claude.use('tts').then(t=>{tts=t;renderControls();renderThread();renderRec()}).catch(()=>{});
     window.claude.use('dictation').then(d=>{dict=d;setupDictation()}).catch(()=>{});
   } else {
     showNotice('이 화면에서는 Claude 연결을 쓸 수 없어요. claude.ai에서 열어 주세요.');
