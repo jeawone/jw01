@@ -89,6 +89,9 @@ section.vocab h2{font-size:1rem;margin:0}
 .pl .en{font-weight:600}
 .rpchip{border-radius:12px;text-align:left}
 .polbox{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:10px}
+.polbox details{border-top:1px solid var(--line);padding-top:6px}
+.polbox summary{cursor:pointer;font-weight:600;padding:4px 0}
+.polbox summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
 .tile{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:2px;min-width:0}
 .tile b{font-size:1.4rem;font-variant-numeric:tabular-nums}
@@ -938,6 +941,7 @@ Now respond to the learner's last message.`;
     const chips=el('div','row');box.appendChild(chips);
     const rpRow=el('div','row');box.appendChild(rpRow);
     const polBox=el('div','polbox');box.appendChild(polBox);
+    const cardBox=el('div','polbox');box.appendChild(cardBox);
     const fi=el('input','pin');fi.id='phFilter';fi.placeholder='표현이나 뜻으로 찾기';
     box.appendChild(fi);
     const ul=el('ul','vl pl');box.appendChild(ul);
@@ -952,7 +956,7 @@ Now respond to the learner's last message.`;
     function drawList(){
       ul.textContent='';
       const q=fi.value.trim().toLowerCase();
-      rpRow.textContent='';drawPolicies(polBox,!q&&PHRASES[phCat].n==='구청·정책 설명');
+      rpRow.textContent='';drawCards(cardBox,!q&&PHRASES[phCat].n==='구청·정책 설명');drawPolicies(polBox,!q&&PHRASES[phCat].n==='구청·정책 설명');
       {const r=ROLES[PHRASES[phCat].n];if(r&&!q){const b=el('button','btn','역할극 시작: '+r.title);b.onclick=()=>startRoleplay(PHRASES[phCat].n);rpRow.appendChild(b)}}
       const rows=q?PHRASES.reduce((a,c)=>a.concat(c.items),[]).filter(it=>it[0].toLowerCase().includes(q)||it[1].toLowerCase().includes(q)):PHRASES[phCat].items;
       if(!rows.length){ul.appendChild(el('li',null,'찾는 표현이 없어요.'));return}
@@ -1084,6 +1088,89 @@ Now respond to the learner's last message.`;
     if(!list.length)return '';
     const txt=list.map(p=>'- '+polName(p)+(p.en&&p.ko?' ('+p.ko+')':'')+(p.desc?': '+p.desc:'')).join('\n');
     return `\n\nThe official's real policies (ask about these by name, one at a time; ${rp.pol?'focus on this one policy':'choose among them'}). Base your questions only on the facts given and do not invent figures or details:\n${txt}`;
+  }
+  /* ---- 기자 질문 카드 ---- */
+  const QCARDS=[
+    {g:'1. 개요',items:[
+      {q:'Could you briefly explain what [정책명] is?',ko:'이 정책이 무엇인지 간단히 설명해 주시겠어요?',a:'In short, [정책명] is a program that ...'},
+      {q:'Who is this program for?',ko:'누구를 위한 정책인가요?',a:'It is mainly designed for ...'}
+    ]},
+    {g:'2. 배경과 목적',items:[
+      {q:'Why did your district start [정책명]?',ko:'왜 이 정책을 시작하셨나요?',a:'We started it because residents told us that ...'},
+      {q:'What problem are you trying to solve?',ko:'어떤 문제를 해결하려는 건가요?',a:'The main challenge we wanted to address was ...'}
+    ]},
+    {g:'3. 운영 방식',items:[
+      {q:'How does it work in practice?',ko:'실제로 어떻게 운영되나요?',a:'Residents can apply by ... The process has three steps.'},
+      {q:'How do residents find out about it?',ko:'주민들은 어떻게 알게 되나요?',a:'We promote it through ...'}
+    ]},
+    {g:'4. 성과',items:[
+      {q:'How do you measure the success of [정책명]?',ko:'성과를 어떻게 측정하나요?',a:'We look at two things: ... and ...'},
+      {q:'What results have you seen so far?',ko:'지금까지 어떤 결과가 있었나요?',a:'So far, we have seen ...'}
+    ]},
+    {g:'5. 예산과 지속 가능성',items:[
+      {q:'How is it funded?',ko:'재원은 어떻게 마련하나요?',a:'It is funded mainly by ...'},
+      {q:'Is it sustainable in the long term?',ko:'장기적으로 지속 가능한가요?',a:'That is something we are working on carefully. ...'}
+    ]},
+    {g:'6. 날카로운 질문',items:[
+      {q:'Some critics say this is just for show. How do you respond?',ko:'보여주기식이라는 비판에는 어떻게 답하시겠어요?',a:'That is a fair question. What I can say is ...'},
+      {q:'What has not worked so far?',ko:'잘 안 된 점은 무엇인가요?',a:'To be honest, one challenge has been ...'},
+      {q:'Why should taxpayers support this?',ko:'왜 세금을 써야 하나요?',a:'Because the benefit reaches ...'}
+    ]},
+    {g:'7. 비교와 앞으로의 계획',items:[
+      {q:'How does this compare with other cities?',ko:'다른 도시와 비교하면 어떤가요?',a:'Compared with other cities, our approach is ...'},
+      {q:'What is the next step for [정책명]?',ko:'다음 단계는 무엇인가요?',a:'Next, we plan to ...'}
+    ]},
+    {g:'공식 석상 안전 표현',items:[
+      {safe:true,q:'That is a fair question.',ko:'좋은 질문입니다. (비판을 인정하고 시간 벌기)',a:'That is a fair question.'},
+      {safe:true,q:'Let me put it this way.',ko:'이렇게 말씀드리겠습니다. (요점 정리)',a:'Let me put it this way.'},
+      {safe:true,q:`I don't have the exact figure with me, but I can follow up.`,ko:'정확한 수치는 지금 없지만 확인 후 알려 드리겠습니다.',a:`I don't have the exact figure with me, but I can follow up.`},
+      {safe:true,q:`I'd need to check with the department in charge.`,ko:'담당 부서에 확인이 필요합니다.',a:`I'd need to check with the department in charge.`},
+      {safe:true,q:'What I can say for now is ...',ko:'지금 말씀드릴 수 있는 것은 ...',a:'What I can say for now is ...'}
+    ]}
+  ];
+  let cardPol=0;
+  function cardText(s){
+    const p=policies[cardPol];
+    return s.split('[정책명]').join(p?polName(p):'this program');
+  }
+  function askCard(q){
+    if(busy){showNotice('혜화가 답하는 중이에요. 잠시 뒤에 다시 눌러 주세요.');return}
+    startRoleplay('구청·정책 설명',policies[cardPol]?cardPol:null);
+    msgs=[{role:'tutor',text:q}];persist();renderThread();
+  }
+  function drawCards(box,show){
+    box.textContent='';box.hidden=!show;
+    if(!show)return;
+    box.appendChild(el('div','small','기자 질문 카드. 질문을 듣고, 답변 시작 문장으로 말을 열어 보세요. “이 질문으로 연습”을 누르면 기자가 그 질문을 하고 대화가 이어져요.'));
+    if(cardPol>=policies.length)cardPol=0;
+    if(policies.length){
+      const sel=el('select');sel.id='cardPol';sel.setAttribute('aria-label','질문에 넣을 정책');
+      policies.forEach((p,i)=>{const o=el('option',null,polName(p));o.value=String(i);if(i===cardPol)o.selected=true;sel.appendChild(o)});
+      sel.onchange=()=>{cardPol=+sel.value;drawCards(box,true)};
+      box.appendChild(sel);
+    } else {
+      box.appendChild(el('div','small','정책을 등록하면 질문의 [정책명] 자리에 그 이름이 들어가요. 지금은 this program으로 표시돼요.'));
+    }
+    QCARDS.forEach((g,gi)=>{
+      const d=el('details');if(gi===0)d.open=true;
+      d.appendChild(el('summary',null,g.g));
+      const ul=el('ul','vl pl');
+      g.items.forEach(it=>{
+        const q=cardText(it.q),a=cardText(it.a);
+        const li=el('li');const sp=el('span');
+        sp.appendChild(el('span','en',q));sp.appendChild(el('br'));sp.appendChild(el('span','small',it.ko));
+        if(!it.safe){sp.appendChild(el('br'));sp.appendChild(el('span','small','답변 시작: '+a))}
+        li.appendChild(sp);
+        const acts=el('div','acts');
+        if(tts){const l=el('button','mini',it.safe?'듣기':'질문 듣기');l.onclick=()=>say(q,1);acts.appendChild(l)}
+        const ins=el('button','mini',it.safe?'입력창에 넣기':'답변 시작 넣기');
+        ins.onclick=()=>{$('input').value=a;autoGrow();$('input').focus()};
+        acts.appendChild(ins);
+        if(!it.safe){const pr=el('button','mini','이 질문으로 연습');pr.onclick=()=>askCard(q);acts.appendChild(pr)}
+        li.appendChild(acts);ul.appendChild(li);
+      });
+      d.appendChild(ul);box.appendChild(d);
+    });
   }
   function drawPolicies(box,show){
     box.textContent='';box.hidden=!show;
