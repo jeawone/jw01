@@ -1,4 +1,4 @@
-<title>혜화 영어 대화방</title>
+<title>회화 영어 대화방</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+KR:wght@400;500;700&display=swap">
 <style>
@@ -63,7 +63,8 @@ section.vocab h2{font-size:1rem;margin:0}
 .dots::after{content:'';animation:d 1.2s steps(4,end) infinite}
 @keyframes d{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}}
 @media (prefers-reduced-motion:reduce){.dots::after{animation:none;content:'...'}}
-.vh{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.vh{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px 12px}
+.vh h2{white-space:nowrap}
 .quiz{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px}
 .quiz .q{font-size:1.2rem;font-weight:600;overflow-wrap:anywhere;text-wrap:balance}
 .quiz .meta{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;color:var(--muted);font-size:.85rem}
@@ -106,12 +107,13 @@ section.vocab h2{font-size:1rem;margin:0}
 <div class="wrap">
   <header>
     <div>
-      <h1>혜화와 영어 한마디</h1>
-      <p class="sub">틀려도 괜찮아요. 한 문장씩 말하면 혜화가 자연스럽게 답하고, 고칠 부분만 한국어로 짚어 드려요.</p>
+      <h1>회화 영어 대화방</h1>
+      <p class="sub">틀려도 괜찮아요. 영어 한 문장이면 충분해요. Claude 선생님이 쉬운 영어로 답하고, 한국어 번역과 "이렇게 말해 보세요" 예시를 함께 보여 드려요. 고칠 점은 하나만 짚어 드려요.</p>
     </div>
     <div class="controls">
       <div class="seg" id="levels" role="group" aria-label="수준"></div>
       <select id="scenario" aria-label="대화 주제"></select>
+      <label class="toggle"><input type="checkbox" id="koToggle"> 한국어 번역 보기</label>
       <label class="toggle"><input type="checkbox" id="speakToggle"> 답변 읽어주기</label>
     </div>
   </header>
@@ -125,7 +127,7 @@ section.vocab h2{font-size:1rem;margin:0}
 
   <div class="composer">
     <button class="btn ghost" id="mic" hidden aria-label="음성으로 입력">말하기</button>
-    <textarea id="input" rows="1" placeholder="영어로 한 문장 써 보세요 (막히면 한국어도 괜찮아요)"></textarea>
+    <textarea id="input" rows="1" placeholder="영어로 써 보세요 (한국어도 괜찮아요)"></textarea>
     <button class="btn" id="send">보내기</button>
   </div>
 
@@ -145,7 +147,8 @@ section.vocab h2{font-size:1rem;margin:0}
 
 <script>
 (function(){
-  const LEVELS=[['beginner','입문'],['intermediate','중급'],['advanced','상급']];
+  const LEVELS=[['beginner','왕초보'],['elementary','초급'],['intermediate','중급']];
+  const ADV_TOPICS=['policy','economy','interview'];
   const SCENARIOS=[
     ['free','자유 대화'],
     ['daily','일상 이야기'],
@@ -156,12 +159,15 @@ section.vocab h2{font-size:1rem;margin:0}
     ['interview','영어 인터뷰 연습']
   ];
   const STARTERS=[
-    'Hi! Can we just chat?',
-    'I want to practice talking about my job.',
-    'Help me introduce Seocho-gu to a foreign visitor.',
-    'What do you think about the economy these days?'
+    ['Hello! Nice to meet you.','안녕하세요! 만나서 반가워요.'],
+    ['I want to practice English.','영어를 연습하고 싶어요.'],
+    ['Please speak slowly.','천천히 말해 주세요.'],
+    ['I like coffee.','저는 커피를 좋아해요.']
   ];
-  const OPENING='Hi, I\'m Hyehwa! I\'m glad you\'re here. How was your day so far?';
+  const OPENING='Hello! I am your English teacher, Claude. What is your name?';
+  const OPENING_KO='안녕하세요! 저는 영어 선생님 Claude예요. 이름이 뭐예요?';
+  function openingMsg(){return {role:'tutor',text:OPENING,ko:OPENING_KO,hints:[{en:'My name is ___.',ko:'제 이름은 ___예요.'},{en:'Hello! Nice to meet you.',ko:'안녕하세요! 만나서 반가워요.'}]}}
+  function catVisible(c){return !(level==='beginner'&&c.n.indexOf('구청·')===0)}
 
   const $=id=>document.getElementById(id);
   const store={
@@ -169,10 +175,14 @@ section.vocab h2{font-size:1rem;margin:0}
     set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
   };
   let level=store.get('hw.level','beginner');
-  let scenario=store.get('hw.scenario','free');
+  if(level==='advanced')level='intermediate';
+  let scenario=store.get('hw.scenario','daily');
   let speakOn=store.get('hw.speak',false);
+  let koOn=store.get('hw.ko',true);
+  let initDone=false;
   let vocab=store.get('hw.vocab',[]);
-  let msgs=store.get('hw.msgs',null)||[{role:'tutor',text:OPENING}];
+  let msgs=store.get('hw.msgs',null)||[openingMsg()];
+  if(msgs[0]&&String(msgs[0].text).indexOf('Hyehwa')>=0)msgs[0]=openingMsg();
   let busy=false, sample=null, tts=null, dict=null, abort=null, dictMode='chat';
 
   function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
@@ -185,24 +195,42 @@ section.vocab h2{font-size:1rem;margin:0}
       seg.appendChild(b);
     });
     const s=$('scenario');s.textContent='';
-    SCENARIOS.forEach(([k,label])=>{const o=el('option',null,label);o.value=k;if(k===scenario)o.selected=true;s.appendChild(o)});
+    if(level==='beginner'&&ADV_TOPICS.includes(scenario)){scenario='daily';store.set('hw.scenario',scenario)}
+    SCENARIOS.filter(([k])=>!(level==='beginner'&&ADV_TOPICS.includes(k))).forEach(([k,label])=>{const o=el('option',null,label);o.value=k;if(k===scenario)o.selected=true;s.appendChild(o)});
     $('speakToggle').checked=speakOn;
+    $('koToggle').checked=koOn;
     $('speakToggle').parentElement.hidden=!tts;
   }
   $('scenario').onchange=e=>{scenario=e.target.value;store.set('hw.scenario',scenario)};
   $('speakToggle').onchange=e=>{speakOn=e.target.checked;store.set('hw.speak',speakOn);if(!speakOn&&tts)tts.stop()};
+  $('koToggle').onchange=e=>{koOn=e.target.checked;store.set('hw.ko',koOn);renderThread()};
 
   function renderThread(){
     const t=$('thread');t.textContent='';
     msgs.forEach((m,i)=>{
       const box=el('div','msg '+(m.role==='me'?'me':'tutor'));
-      box.appendChild(el('div','who',m.role==='me'?'나':'혜화'));
+      box.appendChild(el('div','who',m.role==='me'?'나':'Claude'));
       const b=el('div','bubble',m.text);
       if(m.pending&&!m.text){b.appendChild(el('span','dots'))}
       box.appendChild(b);
       if(m.role==='tutor'&&m.text&&tts&&!m.pending){
         const sp=el('button','mini','듣기');
         sp.onclick=()=>speak(m.text);box.appendChild(sp);
+      }
+      if(m.role==='tutor'&&m.ko&&!m.pending){
+        if(koOn||m.showKo){box.appendChild(el('div','small',m.ko))}
+        else{const kb=el('button','mini','한국어 보기');kb.onclick=()=>{m.showKo=true;renderThread()};box.appendChild(kb)}
+      }
+      if(m.role==='tutor'&&m.hints&&m.hints.length&&!m.pending&&i===msgs.length-1&&!pc){
+        box.appendChild(el('div','small','이렇게 말해 보세요. 누르면 입력창에 들어가요'));
+        const hr=el('div','row');
+        m.hints.forEach(h=>{
+          const c=el('button','chip rpchip');
+          c.appendChild(document.createTextNode(h.en));c.appendChild(el('br'));c.appendChild(el('span','small',h.ko));
+          c.onclick=()=>{$('input').value=h.en;autoGrow();$('input').focus()};
+          hr.appendChild(c);
+        });
+        box.appendChild(hr);
       }
       if(m.role==='me'&&m.fix!=null){
         if(m.fix==='OK'){box.appendChild(el('div','ok','자연스러워요'))}
@@ -221,17 +249,17 @@ section.vocab h2{font-size:1rem;margin:0}
       t.appendChild(box);
     });
     $('starters').hidden=msgs.length>1;
-    window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'});
+    if(initDone)window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'});
   }
 
   function renderStarters(){
     const r=$('starters');r.textContent='';
-    STARTERS.forEach(s=>{const c=el('button','chip',s);c.onclick=()=>{$('input').value=s;$('input').focus()};r.appendChild(c)});
+    STARTERS.forEach(s=>{const c=el('button','chip rpchip');c.appendChild(document.createTextNode(s[0]));c.appendChild(el('br'));c.appendChild(el('span','small',s[1]));c.onclick=()=>{$('input').value=s[0];autoGrow();$('input').focus()};r.appendChild(c)});
   }
 
   function renderVocab(){
     const ul=$('vocab');ul.textContent='';
-    if(!vocab.length){ul.appendChild(el('li',null,'혜화가 알려 주는 단어를 누르면 여기에 모여요.'));return}
+    if(!vocab.length){ul.appendChild(el('li',null,'Claude가 알려 주는 단어를 누르면 여기에 모여요.'));return}
     vocab.forEach((w,i)=>{
       const li=el('li');li.appendChild(el('span',null,w));
       const x=el('button','mini','삭제');x.onclick=()=>{vocab.splice(i,1);store.set('hw.vocab',vocab);renderVocab()};
@@ -242,14 +270,15 @@ section.vocab h2{font-size:1rem;margin:0}
 
   function speak(text){
     if(!tts)return;
-    tts.speak(text,{language:'en'}).catch(()=>{});
+    tts.speak(text,{language:'en',rate:level==='beginner'?0.85:1}).catch(()=>{});
   }
 
   function levelGuide(){
     return {
-      beginner:'The learner is a beginner. Use very simple words and short sentences (under 12 words). Be warm and patient.',
+      beginner:'The learner is a complete beginner (CEFR A1). Use only very common words and very short sentences (4 to 8 words), mostly present tense. No idioms, no phrasal verbs, no slang. Be warm, patient and encouraging.',
+      elementary:'The learner is elementary (CEFR A2). Use simple everyday words and short sentences (up to 12 words). Avoid idioms. Be encouraging.',
       intermediate:'The learner is intermediate. Use natural everyday English with a few useful phrasal verbs or idioms.',
-      advanced:'The learner is advanced. Use natural, nuanced English at native speed and occasionally challenge them with sophisticated vocabulary.'
+      
     }[level];
   }
   function scenarioGuide(){
@@ -265,25 +294,31 @@ section.vocab h2{font-size:1rem;margin:0}
   }
 
   function buildPrompt(){
-    const hist=msgs.filter(m=>!m.pending||m.text).slice(-14).map(m=>(m.role==='me'?'Learner: ':'Hyehwa: ')+m.text).join('\n');
-    return `You are "Hyehwa", a friendly English conversation partner and tutor for a Korean adult learner.
+    const hist=msgs.filter(m=>!m.pending||m.text).slice(-14).map(m=>(m.role==='me'?'Learner: ':'Teacher: ')+m.text).join('\n');
+    return `You are "Claude", a kind English conversation teacher for a Korean adult beginner who is learning English by talking with you.
 ${levelGuide()}
 Topic: ${scenarioGuide()}${focusGuide()}${rpGuide()}
 
 Rules:
-- Reply in English as a real conversation partner: react to what they said, then keep it going with ONE question. Keep it to 1-3 short sentences.
-- If the learner wrote Korean or mixed Korean, gently give the English version in the FIX section and still continue the conversation in English.
-- Correct only genuine mistakes or clearly unnatural phrasing in the learner's LAST message. Write corrections in Korean, short: show the better sentence in English, then a one-line Korean reason. If their sentence is fine, write exactly OK.
-- Offer 1-2 useful words or phrases from the conversation, each as "english phrase = 한국어 뜻".
-- Never add anything outside the three sections below.
+- REPLY: react to what the learner said, then ask ONE easy question they can answer. Follow the level guide above for word choice and sentence length, and keep it to 1 or 2 short sentences.
+- KO: translate your REPLY into natural, simple Korean.
+- HINT: give exactly 2 short sample answers the learner could say next, written in English at the learner's level (at most 8 words each for a beginner), each followed by " = " and its Korean meaning. The two answers must differ in meaning so the learner can choose.
+- If the learner wrote Korean or mixed Korean, give the English version in the FIX section with a short Korean note, and still continue the conversation in English.
+- FIX: look only at the learner's LAST message. Correct at most ONE thing, the most important mistake: show the corrected English sentence, then a one-line Korean reason. Do not mention small mistakes that do not block understanding. If the sentence is fine, write exactly OK.
+- WORDS: offer 1 useful word or phrase from your REPLY as "english phrase = 한국어 뜻".
+- Never add anything outside the five sections below.
 
 Output format, exactly:
 [REPLY]
 (your English reply)
+[KO]
+(Korean translation of your reply)
+[HINT]
+(2 lines, each: English sample answer = 한국어 뜻)
 [FIX]
 (OK or the correction in Korean)
 [WORDS]
-(one "phrase = 뜻" per line, 0-2 lines)
+(one "phrase = 뜻" line, or nothing)
 
 Conversation so far:
 ${hist}
@@ -292,14 +327,16 @@ Now respond to the learner's last message.`;
   }
 
   function parse(raw){
-    const out={reply:'',fix:null,words:[]};
-    const re=/\[(REPLY|FIX|WORDS)\]/g;let m,marks=[];
+    const out={reply:'',ko:'',hints:[],fix:null,words:[]};
+    const re=/\[(REPLY|KO|HINT|FIX|WORDS)\]/g;let m,marks=[];
     while((m=re.exec(raw)))marks.push({k:m[1],s:m.index,e:re.lastIndex});
     if(!marks.length){out.reply=raw.trim();return out}
     marks.forEach((mk,i)=>{
       const body=raw.slice(mk.e,i+1<marks.length?marks[i+1].s:raw.length).trim();
       if(mk.k==='REPLY')out.reply=body;
       if(mk.k==='FIX')out.fix=body;
+      if(mk.k==='KO')out.ko=body;
+      if(mk.k==='HINT')out.hints=body.split('\n').map(s=>s.replace(/^[-*•\s]+/,'').trim()).filter(Boolean).map(s=>{const j=s.indexOf('=');return j>0?{en:s.slice(0,j).trim(),ko:s.slice(j+1).trim()}:null}).filter(Boolean).slice(0,3);
       if(mk.k==='WORDS')out.words=body.split('\n').map(s=>s.replace(/^[-*•\s]+/,'').trim()).filter(Boolean).slice(0,2);
     });
     return out;
@@ -325,10 +362,10 @@ Now respond to the learner's last message.`;
       const prompt=buildPrompt();
       const res=await sample(prompt,{
         cache:false,signal:abort.signal,modelTier:'quick',
-        onText:({text:t})=>{const p=parse(t);tut.text=p.reply;renderThread()}
+        onText:({text:t})=>{const p=parse(t);tut.text=p.reply;tut.ko=p.ko;renderThread()}
       });
       const p=parse(res.text);
-      tut.text=p.reply||res.text.trim();tut.words=p.words;tut.pending=false;
+      tut.text=p.reply||res.text.trim();tut.words=p.words;tut.ko=p.ko;tut.hints=p.hints;tut.pending=false;
       if(p.fix!=null){mine.fix=p.fix}
       logEv('chat',{said:text.slice(0,120),fix:(p.fix&&p.fix!=='OK')?p.fix.slice(0,240):''});
       hideNotice();
@@ -352,7 +389,7 @@ Now respond to the learner's last message.`;
   $('input').addEventListener('input',autoGrow);
   $('input').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();send()}});
   $('send').onclick=send;
-  $('resetChat').onclick=()=>{if(abort)abort.abort();msgs=[{role:'tutor',text:OPENING}];persist();hideNotice();renderThread()};
+  $('resetChat').onclick=()=>{if(abort)abort.abort();msgs=[openingMsg()];persist();hideNotice();renderThread()};
 
   function setupDictation(){
     if(!dict)return;
@@ -380,7 +417,7 @@ Now respond to the learner's last message.`;
     const ps=pairs();const box=$('quiz');
     if(ps.length<2){
       box.hidden=false;box.textContent='';
-      box.appendChild(el('div',null,'퀴즈는 "영어 = 뜻" 단어가 2개 이상 모이면 시작할 수 있어요. 대화하다가 혜화가 알려 주는 단어를 눌러 담아 보세요.'));
+      box.appendChild(el('div',null,'퀴즈는 "영어 = 뜻" 단어가 2개 이상 모이면 시작할 수 있어요. 대화하다가 Claude가 알려 주는 단어를 눌러 담아 보세요.'));
       const c=el('button','btn ghost','닫기');c.onclick=()=>{box.hidden=true};box.appendChild(c);return;
     }
     const list=items||ps.slice().sort((a,b)=>weight(b)-weight(a)).slice(0,10);
@@ -614,7 +651,7 @@ Now respond to the learner's last message.`;
   }
   function startFocus(){
     const es=entries();
-    if(!es.length){showNotice('먼저 단어장에 단어를 담아 주세요. 대화 중 혜화가 알려 주는 단어를 눌러 보세요.');return}
+    if(!es.length){showNotice('먼저 단어장에 단어를 담아 주세요. 대화 중 Claude가 알려 주는 단어를 눌러 보세요.');return}
     const pick=es.slice().sort((a,b)=>weight(b)-weight(a)).slice(0,3);
     focus={words:pick.map(p=>({en:p.en,ko:p.ko,used:false}))};
     store.set('hw.focus',focus);
@@ -954,6 +991,7 @@ Now respond to the learner's last message.`;
     function drawChips(){
       chips.textContent='';
       PHRASES.forEach((c,i)=>{
+        if(!catVisible(c))return;
         const b=el('button','chip'+(i===phCat&&!fi.value.trim()?' got':''),c.n);
         b.onclick=()=>{phCat=i;fi.value='';drawChips();drawList()};
         chips.appendChild(b);
@@ -964,7 +1002,7 @@ Now respond to the learner's last message.`;
       const q=fi.value.trim().toLowerCase();
       rpRow.textContent='';drawCards(cardBox,!q&&PHRASES[phCat].n==='구청·정책 설명');drawPolicies(polBox,!q&&PHRASES[phCat].n==='구청·정책 설명');
       {const r=ROLES[PHRASES[phCat].n];if(r&&!q){const b=el('button','btn','역할극 시작: '+r.title);b.onclick=()=>startRoleplay(PHRASES[phCat].n);rpRow.appendChild(b)}}
-      const rows=q?PHRASES.reduce((a,c)=>a.concat(c.items),[]).filter(it=>it[0].toLowerCase().includes(q)||it[1].toLowerCase().includes(q)):PHRASES[phCat].items;
+      const rows=q?PHRASES.filter(catVisible).reduce((a,c)=>a.concat(c.items),[]).filter(it=>it[0].toLowerCase().includes(q)||it[1].toLowerCase().includes(q)):PHRASES[phCat].items;
       if(!rows.length){ul.appendChild(el('li',null,'찾는 표현이 없어요.'));return}
       rows.forEach(it=>{
         const en=it[0],ko=it[1];
@@ -1012,7 +1050,7 @@ Now respond to the learner's last message.`;
   function rpItems(){const c=rp&&PHRASES.find(x=>x.n===rp.cat);return c?c.items:[]}
   function startRoleplay(cat,pi){
     const r=ROLES[cat];if(!r)return;
-    if(busy){showNotice('혜화가 답하는 중이에요. 잠시 뒤에 다시 눌러 주세요.');return}
+    if(busy){showNotice('Claude가 답하는 중이에요. 잠시 뒤에 다시 눌러 주세요.');return}
     rp={cat:cat,used:[],pol:(pi==null?null:(policies[pi]||null))};store.set('hw.rp',rp);
     msgs=[{role:'tutor',text:rpOpen(r)}];persist();
     hideNotice();renderRp();renderThread();
@@ -1140,7 +1178,7 @@ Now respond to the learner's last message.`;
     return s.split('[정책명]').join(p?polName(p):'this program');
   }
   function askCard(q){
-    if(busy){showNotice('혜화가 답하는 중이에요. 잠시 뒤에 다시 눌러 주세요.');return}
+    if(busy){showNotice('Claude가 답하는 중이에요. 잠시 뒤에 다시 눌러 주세요.');return}
     startRoleplay('구청·정책 설명',policies[cardPol]?cardPol:null);
     msgs=[{role:'tutor',text:q}];persist();renderThread();
   }
@@ -1246,7 +1284,7 @@ Now respond to the learner's last message.`;
     });
   }
   function startPc(){
-    if(busy){showNotice('혜화가 답하는 중이에요. 잠시 뒤에 다시 눌러 주세요.');return}
+    if(busy){showNotice('Claude가 답하는 중이에요. 잠시 뒤에 다시 눌러 주세요.');return}
     if(!sample){showNotice('이 화면에서는 Claude 연결을 쓸 수 없어서 평가를 받을 수 없어요.');return}
     const p=policies[cardPol];const name=p?polName(p):'this program';
     rp=null;store.set('hw.rp',null);renderRp();
@@ -1405,7 +1443,7 @@ Now respond to the learner's last message.`;
     return true;
   }
   function askNote(n){
-    if(busy){showNotice('혜화가 답하는 중이에요. 잠시 뒤에 다시 눌러 주세요.');return}
+    if(busy){showNotice('Claude가 답하는 중이에요. 잠시 뒤에 다시 눌러 주세요.');return}
     const pi=policies.findIndex(p=>polName(p)===n.p);
     startRoleplay('구청·정책 설명',pi>=0?pi:null);
     msgs=[{role:'tutor',text:n.q}];persist();renderThread();
@@ -1507,7 +1545,7 @@ Now respond to the learner's last message.`;
     };
   }
 
-  renderControls();renderStarters();renderThread();renderVocab();renderFocus();renderRp();renderPc();
+  renderControls();renderStarters();renderThread();renderVocab();renderFocus();renderRp();renderPc();initDone=true;
 
   if(window.claude&&window.claude.use){
     window.claude.use('sample').then(s=>{
