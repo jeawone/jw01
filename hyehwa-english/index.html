@@ -84,6 +84,14 @@ section.vocab h2{font-size:1rem;margin:0}
 .focus{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;align-items:flex-start}
 .focus .chip{cursor:default}
 .chip.got{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
+.tile{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.tile b{font-size:1.4rem;font-variant-numeric:tabular-nums}
+.bars{display:flex;align-items:flex-end;gap:8px;height:110px}
+.bars>div{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:4px;height:100%;min-width:0}
+.bars i{display:block;width:100%;max-width:36px;background:var(--accent);border-radius:4px 4px 0 0}
+.bars i.zero{background:var(--line)}
+.bars span{font-size:.72rem;color:var(--muted);font-variant-numeric:tabular-nums}
 </style>
 
 <div class="wrap">
@@ -111,10 +119,11 @@ section.vocab h2{font-size:1rem;margin:0}
   </div>
 
   <section class="vocab">
-    <div class="vh"><h2>내 단어장</h2><div class="row"><button class="btn ghost" id="quizStart" type="button">복습 퀴즈</button><button class="btn ghost" id="pronStart" type="button">발음 연습</button><button class="btn ghost" id="focusStart" type="button">단어로 대화</button></div></div>
+    <div class="vh"><h2>내 단어장</h2><div class="row"><button class="btn ghost" id="quizStart" type="button">복습 퀴즈</button><button class="btn ghost" id="pronStart" type="button">발음 연습</button><button class="btn ghost" id="focusStart" type="button">단어로 대화</button><button class="btn ghost" id="logStart" type="button">연습 기록</button></div></div>
     <ul class="vl" id="vocab"></ul>
     <div class="quiz" id="quiz" hidden></div>
     <div class="quiz" id="pron" hidden></div>
+    <div class="quiz" id="log" hidden></div>
     <div class="row"><button class="mini" id="resetChat">대화 새로 시작</button></div>
   </section>
 </div>
@@ -304,6 +313,7 @@ Now respond to the learner's last message.`;
       const p=parse(res.text);
       tut.text=p.reply||res.text.trim();tut.words=p.words;tut.pending=false;
       if(p.fix!=null){mine.fix=p.fix}
+      logEv('chat',{said:text.slice(0,120),fix:(p.fix&&p.fix!=='OK')?p.fix.slice(0,240):''});
       hideNotice();
       renderThread();persist();
       if(speakOn)speak(tut.text);
@@ -372,6 +382,7 @@ Now respond to the learner's last message.`;
     top.appendChild(seg);top.appendChild(close);box.appendChild(top);
 
     if(Q.i>=Q.items.length){
+      if(!Q.logged){Q.logged=1;logEv('quiz',{r:Q.right,n:Q.items.length})}
       box.appendChild(el('div','score',Q.right+' / '+Q.items.length));
       box.appendChild(el('div',null,Q.wrong.length?'아래 표현은 한 번 더 봐 두세요.':'전부 맞혔어요. 잘하셨어요.'));
       if(Q.wrong.length){
@@ -459,7 +470,7 @@ Now respond to the learner's last message.`;
       if(P.refs.rec){P.refs.rec.textContent=P.listening?'멈추기':'따라 말하기';P.refs.rec.classList.toggle('rec',P.listening)}
       if(was&&!P.listening){
         const h=P.heard.trim();
-        if(h){P.result=compare(P.target,h);const R0=P.result,T0=P.target,P0=P;setTimeout(()=>autoAddMissed(R0,T0,P0),0)}else{P.msg='목소리가 잘 들리지 않았어요. 마이크 가까이에서 다시 해 보세요.'}
+        if(h){P.result=compare(P.target,h);logEv('pron',{p:P.result.pct});const R0=P.result,T0=P.target,P0=P;setTimeout(()=>autoAddMissed(R0,T0,P0),0)}else{P.msg='목소리가 잘 들리지 않았어요. 마이크 가까이에서 다시 해 보세요.'}
         renderPron();
       }
     });
@@ -597,7 +608,7 @@ Now respond to the learner's last message.`;
   }
   function markFocus(text){
     if(!focus)return;
-    focus.words.forEach(w=>{if(!w.used&&hasWord(text,w.en))w.used=true});
+    focus.words.forEach(w=>{if(!w.used&&hasWord(text,w.en)){w.used=true;logEv('word',{w:w.en})}});
     store.set('hw.focus',focus);renderFocus();
   }
   function focusGuide(){
@@ -621,6 +632,75 @@ Now respond to the learner's last message.`;
     box.appendChild(end);
   }
   $('focusStart').onclick=startFocus;
+
+  /* ---- 연습 기록 ---- */
+  let journal=store.get('hw.log',[]);
+  function dstr(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+  function logEv(k,data){
+    journal.push(Object.assign({d:dstr(new Date()),k:k},data||{}));
+    if(journal.length>600)journal=journal.slice(-600);
+    store.set('hw.log',journal);
+  }
+  function lastAvg(k,f,n){
+    const a=journal.filter(e=>e.k===k).slice(-n).map(f);
+    return a.length?Math.round(a.reduce((x,y)=>x+y,0)/a.length):null;
+  }
+  function renderLog(){
+    const box=$('log');box.hidden=false;box.textContent='';
+    const top=el('div','meta');top.appendChild(el('b',null,'연습 기록'));
+    const close=el('button','mini','닫기');close.onclick=()=>{box.hidden=true};
+    top.appendChild(close);box.appendChild(top);
+    if(!journal.length){box.appendChild(el('div',null,'아직 기록이 없어요. 대화, 퀴즈, 발음 연습을 하면 여기에 쌓여요.'));return}
+    const days=[];for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);days.push(d)}
+    const count={};journal.forEach(e=>{count[e.d]=(count[e.d]||0)+1});
+    const active=days.filter(d=>count[dstr(d)]).length;
+    let streak=0;
+    {const d=new Date();if(!count[dstr(d)])d.setDate(d.getDate()-1);while(count[dstr(d)]){streak++;d.setDate(d.getDate()-1)}}
+    const chats=journal.filter(e=>e.k==='chat');
+    const used=journal.filter(e=>e.k==='word').length;
+    const qa=lastAvg('quiz',e=>100*e.r/e.n,5), pa=lastAvg('pron',e=>e.p,5);
+    const tiles=el('div','tiles');
+    const tile=(label,value,sub)=>{const t=el('div','tile');t.appendChild(el('span','small',label));t.appendChild(el('b',null,value));if(sub)t.appendChild(el('span','small',sub));tiles.appendChild(t)};
+    tile('최근 7일 연습',active+'일','연속 '+streak+'일');
+    tile('대화 문장',chats.length+'개','교정 받은 문장 '+chats.filter(e=>e.fix).length+'개');
+    tile('퀴즈 정답률',qa==null?'-':qa+'%','최근 5회 평균');
+    tile('발음 일치율',pa==null?'-':pa+'%','최근 5회 평균');
+    tile('대화에서 쓴 단어',used+'개','단어장 '+vocab.length+'개');
+    box.appendChild(tiles);
+
+    box.appendChild(el('div','small','하루 연습 횟수 (최근 7일)'));
+    const max=Math.max(1,...days.map(d=>count[dstr(d)]||0));
+    const bars=el('div','bars');
+    days.forEach(d=>{
+      const v=count[dstr(d)]||0;
+      const c=el('div');c.setAttribute('aria-label',(d.getMonth()+1)+'월 '+d.getDate()+'일 '+v+'회');
+      c.appendChild(el('span',null,v?String(v):''));
+      const b=el('i',v?'':'zero');b.style.height=(v?Math.max(4,Math.round(v/max*70)):2)+'px';c.appendChild(b);
+      c.appendChild(el('span',null,['일','월','화','수','목','금','토'][d.getDay()]));
+      bars.appendChild(c);
+    });
+    box.appendChild(bars);
+
+    const weak=Object.keys(stats).filter(k=>stats[k].wrong>0&&vocab.includes(k)).sort((a,b)=>stats[b].wrong-stats[a].wrong).slice(0,5);
+    if(weak.length){
+      box.appendChild(el('div','small','자주 틀리는 표현'));
+      const ul=el('ul','vl');
+      weak.forEach(k=>{const li=el('li');li.appendChild(el('span',null,k));li.appendChild(el('span','small','틀림 '+stats[k].wrong+'회'));ul.appendChild(li)});
+      box.appendChild(ul);
+    }
+    const fixes=chats.filter(e=>e.fix).slice(-4).reverse();
+    if(fixes.length){
+      box.appendChild(el('div','small','최근에 교정 받은 문장'));
+      fixes.forEach(e=>{const f=el('div','fix');f.appendChild(el('b',null,e.said+'\n'));f.appendChild(document.createTextNode(e.fix));box.appendChild(f)});
+    }
+    const reset=el('button','mini','기록 지우기');let armed=false;
+    reset.onclick=()=>{
+      if(!armed){armed=true;reset.textContent='정말 지울까요? 한 번 더 누르면 지워져요';return}
+      journal=[];store.set('hw.log',[]);renderLog();
+    };
+    box.appendChild(reset);
+  }
+  $('logStart').onclick=renderLog;
 
   renderControls();renderStarters();renderThread();renderVocab();renderFocus();
 
