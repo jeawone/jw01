@@ -133,6 +133,7 @@ section.vocab h2{font-size:1rem;margin:0}
 
   <section class="vocab">
     <div class="vh"><h2>내 단어장</h2><div class="row"><button class="btn ghost" id="quizStart" type="button">복습 퀴즈</button><button class="btn ghost" id="pronStart" type="button">발음 연습</button><button class="btn ghost" id="focusStart" type="button">단어로 대화</button><button class="btn ghost" id="logStart" type="button">연습 기록</button><button class="btn ghost" id="dailyStart" type="button">오늘의 표현</button><button class="btn ghost" id="phrasesStart" type="button">생활 표현집</button></div></div>
+    <div class="quiz" id="rec" hidden></div>
     <ul class="vl" id="vocab"></ul>
     <div class="quiz" id="quiz" hidden></div>
     <div class="quiz" id="pron" hidden></div>
@@ -257,7 +258,7 @@ section.vocab h2{font-size:1rem;margin:0}
     STARTERS.forEach(s=>{const c=el('button','chip rpchip');c.appendChild(document.createTextNode(s[0]));c.appendChild(el('br'));c.appendChild(el('span','small',s[1]));c.onclick=()=>{$('input').value=s[0];autoGrow();$('input').focus()};r.appendChild(c)});
   }
 
-  function renderVocab(){
+  function renderVocab(){renderRec();
     const ul=$('vocab');ul.textContent='';
     if(!vocab.length){ul.appendChild(el('li',null,'Claude가 알려 주는 단어를 누르면 여기에 모여요.'));return}
     vocab.forEach((w,i)=>{
@@ -436,7 +437,7 @@ Now respond to the learner's last message.`;
     top.appendChild(seg);top.appendChild(close);box.appendChild(top);
 
     if(Q.i>=Q.items.length){
-      if(!Q.logged){Q.logged=1;logEv('quiz',{r:Q.right,n:Q.items.length})}
+      if(!Q.logged){Q.logged=1;logEv('quiz',{r:Q.right,n:Q.items.length});renderRec()}
       box.appendChild(el('div','score',Q.right+' / '+Q.items.length));
       box.appendChild(el('div',null,Q.wrong.length?'아래 표현은 한 번 더 봐 두세요.':'전부 맞혔어요. 잘하셨어요.'));
       if(Q.wrong.length){
@@ -466,6 +467,7 @@ Now respond to the learner's last message.`;
       b.onclick=()=>{
         if(Q.done)return;Q.done=true;
         const st=stats[p.key]||(stats[p.key]={right:0,wrong:0});
+        st.t=dstr(new Date());
         if(o===ans){Q.right++;st.right++;b.classList.add('good')}
         else{st.wrong++;Q.wrong.push(p);b.classList.add('bad');
           wrap.querySelectorAll('.opt').forEach(x=>{if(x.textContent===ans)x.classList.add('good')});
@@ -1385,6 +1387,42 @@ Now respond to the learner's last message.`;
     sa.onclick=()=>{let k=0;pcLast.qs.forEach((q,i)=>{if(addNote(i))k++});sa.textContent=k?k+'개 저장함':'이미 모두 저장돼 있어요';sa.disabled=true};
     const nv=el('button','btn ghost','저장한 노트 보기');nv.onclick=()=>{renderNotes();setTimeout(()=>$('notes').scrollIntoView({behavior:'smooth',block:'start'}),50)};
     row.appendChild(again);row.appendChild(sa);row.appendChild(nv);row.appendChild(tr);row.appendChild(close);box.appendChild(row);
+  }
+
+  /* ---- 오늘의 복습 추천 ---- */
+  function recList(){
+    const today=new Date();
+    return pairs().map(p=>{
+      const s=stats[p.key]||{right:0,wrong:0};
+      const seen=s.t?Math.max(0,Math.round((today-new Date(s.t+'T00:00:00'))/86400000)):null;
+      let sc=s.wrong*3-s.right+Math.min(10,(seen==null?0:seen)*0.5);
+      let why='';
+      if(!s.t&&!(s.right+s.wrong)){sc+=4;why='새 단어'}
+      else if(s.wrong>s.right){why='자주 틀려요'}
+      else if(seen!=null&&seen>=3){why=seen+'일 동안 안 봤어요'}
+      else if(s.wrong>0){why='가끔 틀려요'}
+      return {p:p,sc:sc,why:why};
+    }).filter(o=>o.why).sort((a,b)=>b.sc-a.sc).slice(0,5);
+  }
+  function renderRec(){
+    const box=$('rec');if(!box)return;
+    box.textContent='';
+    if(pairs().length<2){box.hidden=true;return}
+    const list=recList();
+    box.hidden=false;
+    box.appendChild(el('b',null,'오늘의 복습 추천'));
+    if(!list.length){box.appendChild(el('div','small','오늘은 복습할 단어가 없어요. 대화에서 새 단어를 모아 보세요.'));return}
+    box.appendChild(el('div','small','자주 틀리거나 오래 안 본 단어예요. 퀴즈로 한 번에 복습해 보세요.'));
+    const ul=el('ul','vl');
+    list.forEach(o=>{
+      const li=el('li');const sp=el('span');
+      sp.appendChild(el('b',null,o.p.en));sp.appendChild(document.createTextNode(' = '+o.p.ko));
+      li.appendChild(sp);li.appendChild(el('span','small',o.why));ul.appendChild(li);
+    });
+    box.appendChild(ul);
+    const go=el('button','btn','추천 단어로 퀴즈 시작');
+    go.onclick=()=>{startQuiz(list.map(o=>o.p));$('quiz').scrollIntoView({behavior:'smooth',block:'nearest'})};
+    box.appendChild(go);
   }
 
   /* ---- 복습 추이 ---- */
