@@ -65,6 +65,26 @@ section.vocab h2{font-size:1rem;margin:0}
 @media (prefers-reduced-motion:reduce){.dots::after{animation:none;content:'...'}}
 .vh{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px 12px}
 .vh h2{white-space:nowrap}
+/* phone: touch-sized targets, 16px inputs (no iOS zoom), no tap flash */
+html{-webkit-text-size-adjust:100%}
+[hidden]{display:none!important}
+button,summary,select,label{-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.seg button{min-height:44px;padding:8px 16px}
+select{min-height:44px;font-size:16px}
+input,textarea{font-size:16px}
+.toggle{min-height:44px;gap:8px}
+.toggle input{width:22px;height:22px;margin:0}
+.btn{min-height:44px}
+.chip{min-height:40px;padding:8px 14px}
+.mini{min-height:40px;min-width:44px;padding:8px 12px 8px 0}
+summary{min-height:44px;display:flex;align-items:center}
+.opt{min-height:48px}
+@media (max-width:520px){
+  .msg{max-width:94%}
+  h1{font-size:1.25rem}
+  .quiz{padding:14px}
+  .composer .btn{padding:10px 14px}
+}
 .quiz{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px}
 .quiz .q{font-size:1.2rem;font-weight:600;overflow-wrap:anywhere;text-wrap:balance}
 .quiz .meta{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;color:var(--muted);font-size:.85rem}
