@@ -87,6 +87,7 @@ section.vocab h2{font-size:1rem;margin:0}
 .pl li{flex-wrap:wrap;align-items:center}
 .pl .acts{display:flex;gap:12px;flex-wrap:wrap}
 .pl .en{font-weight:600}
+.rpchip{border-radius:12px;text-align:left}
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
 .tile{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:2px;min-width:0}
 .tile b{font-size:1.4rem;font-variant-numeric:tabular-nums}
@@ -111,6 +112,7 @@ section.vocab h2{font-size:1rem;margin:0}
   </header>
 
   <div id="notice" class="notice" hidden></div>
+  <div class="focus" id="rp" hidden></div>
   <div class="focus" id="focus" hidden></div>
   <div id="thread" aria-live="polite"></div>
   <div class="row" id="starters"></div>
@@ -258,7 +260,7 @@ section.vocab h2{font-size:1rem;margin:0}
     const hist=msgs.filter(m=>!m.pending||m.text).slice(-14).map(m=>(m.role==='me'?'Learner: ':'Hyehwa: ')+m.text).join('\n');
     return `You are "Hyehwa", a friendly English conversation partner and tutor for a Korean adult learner.
 ${levelGuide()}
-Topic: ${scenarioGuide()}${focusGuide()}
+Topic: ${scenarioGuide()}${focusGuide()}${rpGuide()}
 
 Rules:
 - Reply in English as a real conversation partner: react to what they said, then keep it going with ONE question. Keep it to 1-3 short sentences.
@@ -305,6 +307,7 @@ Now respond to the learner's last message.`;
     input.value='';autoGrow();
     busy=true;$('send').disabled=true;
     markFocus(text);
+    markRp(text);
     const mine={role:'me',text,fix:null};
     const tut={role:'tutor',text:'',pending:true,words:[]};
     msgs.push(mine,tut);renderThread();
@@ -893,6 +896,7 @@ Now respond to the learner's last message.`;
     const close=el('button','mini','닫기');close.onclick=()=>{if(tts)tts.stop().catch(()=>{});box.hidden=true};
     top.appendChild(close);box.appendChild(top);
     const chips=el('div','row');box.appendChild(chips);
+    const rpRow=el('div','row');box.appendChild(rpRow);
     const fi=el('input','pin');fi.id='phFilter';fi.placeholder='표현이나 뜻으로 찾기';
     box.appendChild(fi);
     const ul=el('ul','vl pl');box.appendChild(ul);
@@ -907,6 +911,8 @@ Now respond to the learner's last message.`;
     function drawList(){
       ul.textContent='';
       const q=fi.value.trim().toLowerCase();
+      rpRow.textContent='';
+      {const r=ROLES[PHRASES[phCat].n];if(r&&!q){const b=el('button','btn','역할극 시작: '+r.title);b.onclick=()=>startRoleplay(PHRASES[phCat].n);rpRow.appendChild(b)}}
       const rows=q?PHRASES.reduce((a,c)=>a.concat(c.items),[]).filter(it=>it[0].toLowerCase().includes(q)||it[1].toLowerCase().includes(q)):PHRASES[phCat].items;
       if(!rows.length){ul.appendChild(el('li',null,'찾는 표현이 없어요.'));return}
       rows.forEach(it=>{
@@ -933,7 +939,71 @@ Now respond to the learner's last message.`;
   }
   $('phrasesStart').onclick=openPhrases;
 
-  renderControls();renderStarters();renderThread();renderVocab();renderFocus();
+  /* ---- 표현집 역할극 ---- */
+  const ROLES={
+    '인사·안부':{title:'오랜만에 만난 친구',role:'an old friend the learner has not seen for two years, meeting by chance on the street',me:'an old friend',open:`Oh my gosh, is that you? Long time no see! How have you been?`},
+    '감사·사과':{title:'붐비는 지하철',role:'a friendly stranger on a crowded subway train who has just bumped into the learner by accident',me:'a fellow passenger',open:`Oh, sorry! Was that your foot? The train is so packed today.`},
+    '카페·식당':{title:'카페 점원',role:'a barista at a busy cafe',me:'a customer',open:`Hi there! Welcome in. What can I get started for you today?`},
+    '쇼핑':{title:'옷가게 점원',role:'a sales clerk in a clothing store',me:'a customer',open:`Hi! Let me know if you need any help finding something.`},
+    '길·교통':{title:'길 묻기',role:'a friendly local in Seoul whom the learner stops to ask for directions or help with buses and subways',me:'a traveler who is a bit lost',open:`Hello! You look a little lost. Can I help you find something?`},
+    '전화·약속':{title:'약속 잡기',role:'a friend on a phone call, trying to arrange a time to meet',me:'a friend',open:`Hey! Are you free this weekend? I was thinking we could catch up.`},
+    '건강':{title:'병원 진료',role:'a kind doctor at a clinic',me:'a patient',open:`Good morning. Please have a seat. What brings you in today?`},
+    '잡담·감정':{title:'파티에서 만난 동료',role:'a friendly new coworker at a company party, making small talk',me:'a colleague',open:`Hi, I don't think we've met. I'm Alex from the marketing team. How do you know everyone here?`},
+    '못 알아들었을 때':{title:'말이 빠른 사람',role:'a fast-talking native speaker who uses a few idioms and speaks quickly while asking the learner for help with a plan, so the learner needs to ask for repetition or clarification',me:'someone who may need to ask for clarification',open:`Hey, so I was wondering if you could give me a hand with this thing tomorrow. It's kind of a last-minute deal, but no big deal, whenever works!`}
+  };
+  let rp=store.get('hw.rp',null);
+  function rpItems(){const c=rp&&PHRASES.find(x=>x.n===rp.cat);return c?c.items:[]}
+  function startRoleplay(cat){
+    const r=ROLES[cat];if(!r)return;
+    if(busy){showNotice('혜화가 답하는 중이에요. 잠시 뒤에 다시 눌러 주세요.');return}
+    rp={cat:cat,used:[]};store.set('hw.rp',rp);
+    msgs=[{role:'tutor',text:r.open}];persist();
+    hideNotice();renderRp();renderThread();
+    setTimeout(()=>{$('rp').scrollIntoView({behavior:'smooth',block:'start'});$('input').focus({preventScroll:true})},80);
+  }
+  function markRp(text){
+    if(!rp||!ROLES[rp.cat])return;
+    rpItems().forEach(it=>{
+      if(!rp.used.includes(it[0])&&compare(it[0],text).pct>=80){rp.used.push(it[0]);logEv('rp',{p:it[0]})}
+    });
+    store.set('hw.rp',rp);renderRp();
+  }
+  function rpGuide(){
+    if(!rp||!ROLES[rp.cat])return '';
+    const r=ROLES[rp.cat];
+    const left=rpItems().map(i=>i[0]).filter(e=>!rp.used.includes(e));
+    return `\n\nRole-play: In the REPLY section, stay fully in character as ${r.role}. The learner plays ${r.me}. Keep it realistic and short, and move the scene forward. Create natural moments where the learner can use these expressions (still unused: ${left.join(' | ')||'none, so just enjoy the scene'}). Never break character inside REPLY; give all teaching comments only in the FIX and WORDS sections. If the scene reaches a natural ending, continue with a new related moment.`;
+  }
+  function renderRp(){
+    const box=$('rp');box.textContent='';
+    if(!rp||!ROLES[rp.cat]){box.hidden=true;return}
+    box.hidden=false;
+    const r=ROLES[rp.cat];
+    box.appendChild(el('div','small','역할극: '+r.title+'. 아래 표현을 써 보세요 (누르면 입력창에 들어가요)'));
+    const row=el('div','row');
+    rpItems().forEach(it=>{
+      const used=rp.used.includes(it[0]);
+      const c=el('button','chip rpchip'+(used?' got':''),(used?'✓ ':'')+it[0]);
+      c.title=it[1];
+      c.onclick=()=>{$('input').value=it[0];autoGrow();$('input').focus()};
+      row.appendChild(c);
+    });
+    box.appendChild(row);
+    const end=el('button','mini','역할극 끝내기');
+    end.onclick=()=>{
+      rp=null;store.set('hw.rp',null);
+      msgs.push({role:'tutor',text:'Great job! That was fun. Want to try another scene, or just chat?'});
+      persist();renderRp();renderThread();
+    };
+    box.appendChild(end);
+  }
+  const baseReset=$('resetChat').onclick;
+  $('resetChat').onclick=()=>{
+    baseReset();
+    if(rp&&ROLES[rp.cat]){rp.used=[];store.set('hw.rp',rp);msgs=[{role:'tutor',text:ROLES[rp.cat].open}];persist();renderRp();renderThread()}
+  };
+
+  renderControls();renderStarters();renderThread();renderVocab();renderFocus();renderRp();
 
   if(window.claude&&window.claude.use){
     window.claude.use('sample').then(s=>{
