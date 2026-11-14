@@ -119,11 +119,12 @@ section.vocab h2{font-size:1rem;margin:0}
   </div>
 
   <section class="vocab">
-    <div class="vh"><h2>내 단어장</h2><div class="row"><button class="btn ghost" id="quizStart" type="button">복습 퀴즈</button><button class="btn ghost" id="pronStart" type="button">발음 연습</button><button class="btn ghost" id="focusStart" type="button">단어로 대화</button><button class="btn ghost" id="logStart" type="button">연습 기록</button></div></div>
+    <div class="vh"><h2>내 단어장</h2><div class="row"><button class="btn ghost" id="quizStart" type="button">복습 퀴즈</button><button class="btn ghost" id="pronStart" type="button">발음 연습</button><button class="btn ghost" id="focusStart" type="button">단어로 대화</button><button class="btn ghost" id="logStart" type="button">연습 기록</button><button class="btn ghost" id="dailyStart" type="button">오늘의 표현</button></div></div>
     <ul class="vl" id="vocab"></ul>
     <div class="quiz" id="quiz" hidden></div>
     <div class="quiz" id="pron" hidden></div>
     <div class="quiz" id="log" hidden></div>
+    <div class="quiz" id="daily" hidden></div>
     <div class="row"><button class="mini" id="resetChat">대화 새로 시작</button></div>
   </section>
 </div>
@@ -701,6 +702,110 @@ Now respond to the learner's last message.`;
     box.appendChild(reset);
   }
   $('logStart').onclick=renderLog;
+
+  /* ---- 오늘의 표현 퀴즈 ---- */
+  let D=null;
+  function dailyKey(){return dstr(new Date())+'|'+level+'|'+scenario}
+  function loadDaily(){const c=store.get('hw.daily',null);return c&&c.key===dailyKey()?c:null}
+  function validItem(o){
+    return !!o&&typeof o.expr==='string'&&typeof o.ko==='string'&&typeof o.example==='string'&&typeof o.sentence==='string'&&o.sentence.includes('____')&&Array.isArray(o.wrong)&&o.wrong.length>=2&&o.wrong.every(w=>typeof w==='string');
+  }
+  function promptDaily(){
+    return `Create 5 useful English expressions for a Korean adult learner. Level: ${level}. Topic: ${scenarioGuide()} Date: ${dstr(new Date())} (vary your picks from day to day; prefer natural, commonly used phrases and collocations over single basic words).\nReturn only a JSON array of exactly 5 objects with these string fields:\n- expr: the expression (2 to 5 words)\n- ko: its Korean meaning (short)\n- example: a natural English sentence using expr\n- sentence: the same sentence with expr replaced by ____\n- wrong: an array of 3 plausible but incorrect or unnatural alternatives of similar length that a learner might choose`;
+  }
+  function dailyShell(){
+    const box=$('daily');box.hidden=false;box.textContent='';
+    const top=el('div','meta');top.appendChild(el('b',null,'오늘의 표현'));
+    const close=el('button','mini','닫기');close.onclick=()=>{if(tts)tts.stop().catch(()=>{});box.hidden=true;D=null};
+    top.appendChild(close);box.appendChild(top);
+    return box;
+  }
+  async function openDaily(){
+    let box=dailyShell();
+    let c=loadDaily();
+    if(!c){
+      if(!sample){box.appendChild(el('div','notice','이 화면에서는 Claude 연결을 쓸 수 없어요.'));return}
+      box.appendChild(el('div',null,'오늘의 표현을 준비하고 있어요 ('+levelName()+', '+scenarioName()+')'));
+      try{
+        const arr=await sample.json(promptDaily(),{modelTier:'quick'});
+        const items=(Array.isArray(arr)?arr:[]).filter(validItem).slice(0,5);
+        if(items.length<3)throw new Error('bad');
+        c={key:dailyKey(),items:items,i:0,right:0,done:false};
+        store.set('hw.daily',c);
+      }catch(e){
+        if($('daily').hidden)return;
+        box=dailyShell();
+        box.appendChild(el('div','notice',e&&e.code==='not_granted'?'Claude 연결을 허용해야 해요. 다시 눌러 주세요.':'표현을 가져오지 못했어요. 다시 눌러 주세요.'));
+        return;
+      }
+      if($('daily').hidden)return;
+    }
+    D=c;renderDaily();
+  }
+  function levelName(){return (LEVELS.find(l=>l[0]===level)||[0,level])[1]}
+  function scenarioName(){return (SCENARIOS.find(s=>s[0]===scenario)||[0,scenario])[1]}
+  function renderDaily(){
+    const c=D;if(!c)return;
+    const box=dailyShell();
+    const n=c.items.length;
+    if(c.i>=n){
+      if(!c.logged){c.logged=1;store.set('hw.daily',c);logEv('daily',{r:c.right,n:n})}
+      box.appendChild(el('div','score',c.right+' / '+n));
+      box.appendChild(el('div',null,c.right===n?'오늘의 표현을 모두 맞혔어요.':'아래 표현을 소리 내어 한 번씩 읽어 보세요.'));
+      const ul=el('ul','vl');
+      c.items.forEach(it=>{
+        const li=el('li');
+        const sp=el('span');
+        sp.appendChild(el('b',null,it.expr));
+        sp.appendChild(document.createTextNode(' = '+it.ko));
+        sp.appendChild(el('br'));
+        sp.appendChild(el('span','small',it.example));
+        li.appendChild(sp);
+        if(tts){const b=el('button','mini','듣기');b.onclick=()=>say(it.example,1);li.appendChild(b)}
+        ul.appendChild(li);
+      });
+      box.appendChild(ul);
+      const r=el('div','row');
+      const add=el('button','btn','단어장에 담기');
+      add.onclick=()=>{
+        let k=0;
+        c.items.forEach(it=>{
+          const have=vocab.some(x=>x.split('=')[0].trim().toLowerCase()===it.expr.toLowerCase());
+          if(!have){vocab.unshift(it.expr+' = '+it.ko);k++}
+        });
+        store.set('hw.vocab',vocab);renderVocab();
+        add.textContent=k?k+'개를 담았어요':'이미 다 담겨 있어요';add.disabled=true;
+      };
+      const again=el('button','btn ghost','처음부터 다시 풀기');
+      again.onclick=()=>{c.i=0;c.right=0;c.logged=0;store.set('hw.daily',c);renderDaily()};
+      r.appendChild(add);r.appendChild(again);box.appendChild(r);
+      box.appendChild(el('div','small','내일은 새로운 표현 5개가 나와요. 수준이나 주제를 바꾸면 오늘 다른 표현을 받을 수 있어요.'));
+      return;
+    }
+    const it=c.items[c.i];
+    const bar=el('div','bar');const fill=el('i');fill.style.width=(c.i/n*100)+'%';bar.appendChild(fill);box.appendChild(bar);
+    box.appendChild(el('div','meta',(c.i+1)+' / '+n+'  빈칸에 알맞은 표현을 고르세요'));
+    box.appendChild(el('div','q',it.sentence));
+    box.appendChild(el('div','small','뜻: '+it.ko));
+    const wrap=el('div','opts');const fb=el('div');
+    let answered=false;
+    shuffle([it.expr].concat(it.wrong.slice(0,3))).forEach(o=>{
+      const b=el('button','opt',o);
+      b.onclick=()=>{
+        if(answered)return;answered=true;
+        if(o===it.expr){c.right++;b.classList.add('good')}
+        else{b.classList.add('bad');wrap.querySelectorAll('.opt').forEach(x=>{if(x.textContent===it.expr)x.classList.add('good')})}
+        c.i++;store.set('hw.daily',c);
+        wrap.querySelectorAll('.opt').forEach(x=>x.disabled=true);
+        fb.textContent=(o===it.expr?'정답! ':'정답: '+it.expr+'. ')+it.example;
+        const nx=el('button','btn',c.i>=n?'결과 보기':'다음');
+        nx.onclick=()=>renderDaily();box.appendChild(nx);nx.focus();
+      };
+      wrap.appendChild(b);
+    });
+    box.appendChild(wrap);box.appendChild(fb);
+  }
+  $('dailyStart').onclick=openDaily;
 
   renderControls();renderStarters();renderThread();renderVocab();renderFocus();
 
