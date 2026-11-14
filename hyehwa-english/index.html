@@ -735,6 +735,7 @@ Now respond to the learner's last message.`;
     });
     box.appendChild(bars);
 
+    drawReviewTrend(box);
     drawPcTrend(box);
     const weak=Object.keys(stats).filter(k=>stats[k].wrong>0&&vocab.includes(k)).sort((a,b)=>stats[b].wrong-stats[a].wrong).slice(0,5);
     if(weak.length){
@@ -1384,6 +1385,63 @@ Now respond to the learner's last message.`;
     sa.onclick=()=>{let k=0;pcLast.qs.forEach((q,i)=>{if(addNote(i))k++});sa.textContent=k?k+'개 저장함':'이미 모두 저장돼 있어요';sa.disabled=true};
     const nv=el('button','btn ghost','저장한 노트 보기');nv.onclick=()=>{renderNotes();setTimeout(()=>$('notes').scrollIntoView({behavior:'smooth',block:'start'}),50)};
     row.appendChild(again);row.appendChild(sa);row.appendChild(nv);row.appendChild(tr);row.appendChild(close);box.appendChild(row);
+  }
+
+  /* ---- 복습 추이 ---- */
+  function drawReviewTrend(box){
+    const S=[
+      {k:'quiz',name:'단어 퀴즈',color:'var(--accent)',sym:'●'},
+      {k:'daily',name:'오늘의 표현',color:'var(--warn)',sym:'■'},
+      {k:'review',name:'답변 복습',color:'var(--ink)',sym:'◆'}
+    ];
+    const evs=journal.filter(e=>(e.k==='quiz'||e.k==='daily'||e.k==='review')&&e.n>0).slice(-15);
+    box.appendChild(el('div','small','복습 추이 (정답·기억 비율 %)'));
+    if(!evs.length){box.appendChild(el('div','small','아직 복습 기록이 없어요. 복습 퀴즈나 오늘의 표현을 풀어 보세요.'));return}
+    const lg=el('div','row');
+    S.forEach(s=>{const sp=el('span','small',s.sym+' '+s.name);sp.style.color=s.color;lg.appendChild(sp)});
+    box.appendChild(lg);
+    const NS='http://www.w3.org/2000/svg';
+    const W=320,H=160,L=32,R=14,T=26,B=26;
+    const mk=(tag,attrs,style)=>{const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(style)Object.assign(e.style,style);return e};
+    const svg=mk('svg',{viewBox:'0 0 '+W+' '+H,role:'img','aria-label':'복습 정답·기억 비율 추이'},{width:'100%',maxWidth:'460px',height:'auto'});
+    const y=v=>T+(100-v)/100*(H-T-B);
+    const x=i=>evs.length===1?(L+(W-L-R)/2):L+14+i*(W-L-R-28)/(evs.length-1);
+    [0,50,100].forEach(v=>{
+      svg.appendChild(mk('line',{x1:L,x2:W-R,y1:y(v),y2:y(v)},{stroke:'var(--line)',strokeWidth:'1'}));
+      const t=mk('text',{x:L-6,y:y(v)+4,'text-anchor':'end'},{fill:'var(--muted)',fontSize:'10px'});
+      t.textContent=v+'%';svg.appendChild(t);
+    });
+    S.forEach(s=>{
+      const pts=[];
+      evs.forEach((e,i)=>{if(e.k===s.k)pts.push({i:i,v:Math.round(100*e.r/e.n)})});
+      if(pts.length>1)svg.appendChild(mk('polyline',{points:pts.map(p=>x(p.i)+','+y(p.v)).join(' '),fill:'none'},{stroke:s.color,strokeWidth:'1.5',opacity:'0.6'}));
+      pts.forEach((p,j)=>{
+        const cx=x(p.i),cy=y(p.v);let m;
+        if(s.k==='quiz')m=mk('circle',{cx:cx,cy:cy,r:4});
+        else if(s.k==='daily')m=mk('rect',{x:cx-3.5,y:cy-3.5,width:7,height:7});
+        else m=mk('polygon',{points:cx+','+(cy-5)+' '+(cx+5)+','+cy+' '+cx+','+(cy+5)+' '+(cx-5)+','+cy});
+        m.style.fill=s.color;svg.appendChild(m);
+        if(j===pts.length-1){
+          const lab=mk('text',{x:cx,y:cy-9,'text-anchor':'middle'},{fill:'var(--ink)',fontSize:'10px'});
+          lab.textContent=String(p.v);svg.appendChild(lab);
+        }
+      });
+    });
+    [0,evs.length-1].forEach((i,n)=>{
+      if(n===1&&i===0)return;
+      const dl=mk('text',{x:x(i),y:H-8,'text-anchor':'middle'},{fill:'var(--muted)',fontSize:'10px'});
+      dl.textContent=evs[i].d.slice(5).replace('-','/');svg.appendChild(dl);
+    });
+    box.appendChild(svg);
+    const avg=a=>Math.round(a.reduce((p,q)=>p+q,0)/a.length);
+    S.forEach(s=>{
+      const all=journal.filter(e=>e.k===s.k&&e.n>0).map(e=>100*e.r/e.n);
+      if(!all.length)return;
+      const l5=all.slice(-5),p5=all.slice(-10,-5);
+      let t=s.name+': 최근 '+l5.length+'회 평균 '+avg(l5)+'%';
+      if(p5.length)t+=' (이전 '+p5.length+'회 '+avg(p5)+'%)';
+      box.appendChild(el('div','small',t));
+    });
   }
 
   /* ---- 회견 점수 추이 ---- */
