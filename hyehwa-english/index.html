@@ -138,6 +138,7 @@ section.vocab h2{font-size:1rem;margin:0}
     <div class="quiz" id="daily" hidden></div>
     <div class="quiz" id="phrases" hidden></div>
     <div class="quiz" id="notes" hidden></div>
+    <div class="quiz" id="review" hidden></div>
     <div class="row"><button class="mini" id="resetChat">대화 새로 시작</button></div>
   </section>
 </div>
@@ -1158,6 +1159,7 @@ Now respond to the learner's last message.`;
     }
     const pcb=el('button','btn','모의 기자회견 시작 (질문 6개)');pcb.onclick=startPc;box.appendChild(pcb);
     const nb=el('button','btn ghost','회견 답변 노트 ('+notes.length+')');nb.onclick=renderNotes;box.appendChild(nb);
+    const rvb=el('button','btn ghost','오늘의 답변 복습 ('+dueNotes().length+')');rvb.onclick=startReview;box.appendChild(rvb);
     QCARDS.forEach((g,gi)=>{
       const d=el('details');if(gi===0)d.open=true;
       d.appendChild(el('summary',null,g.g));
@@ -1415,6 +1417,7 @@ Now respond to the learner's last message.`;
     top.appendChild(close);box.appendChild(top);
     if(!notes.length){box.appendChild(el('div',null,'저장한 답변이 없어요. 모의 기자회견 결과에서 질문별 개선 답안을 노트에 저장해 보세요.'));return}
     const ul=el('ul','vl pl');
+    {const rb=el('button','btn ghost','오늘의 답변 복습 ('+dueNotes().length+')');rb.onclick=startReview;box.appendChild(rb)}
     notes.forEach((n,i)=>{
       const li=el('li');const sp=el('span');
       sp.appendChild(el('span','small',n.d.slice(5).replace('-','/')+' · '+n.p));sp.appendChild(el('br'));
@@ -1431,6 +1434,77 @@ Now respond to the learner's last message.`;
       li.appendChild(acts);ul.appendChild(li);
     });
     box.appendChild(ul);
+  }
+
+  /* ---- 오늘의 답변 복습 ---- */
+  const RV_OK=[3,7,14,30];
+  let RV=null;
+  function dueNotes(){
+    const t=dstr(new Date());
+    return notes.filter(n=>!n.due||n.due<=t).sort((a,b)=>((a.due||'')<(b.due||'')?-1:1));
+  }
+  function startReview(){
+    RV={items:dueNotes().slice(0,3),i:0,right:0,logged:false};
+    renderReview();
+    setTimeout(()=>$('review').scrollIntoView({behavior:'smooth',block:'start'}),50);
+  }
+  function rateNote(n,ok){
+    let days=1;
+    if(ok){n.lv=(n.lv||0)+1;days=RV_OK[Math.min(n.lv,RV_OK.length)-1]}
+    else{n.lv=0;days=1}
+    const d=new Date();d.setDate(d.getDate()+days);n.due=dstr(d);
+    store.set('hw.notes',notes);
+  }
+  function renderReview(){
+    const box=$('review');box.hidden=false;box.textContent='';
+    const top=el('div','meta');top.appendChild(el('b',null,'오늘의 답변 복습'));
+    const close=el('button','mini','닫기');close.onclick=()=>{if(tts)tts.stop().catch(()=>{});box.hidden=true;RV=null};
+    top.appendChild(close);box.appendChild(top);
+    if(!RV.items.length){
+      box.appendChild(el('div',null,notes.length?'오늘 복습할 답변이 없어요. 다음 복습 날짜가 되면 다시 나와요.':'노트에 저장한 답변이 없어요. 모의 기자회견 후 답변을 노트에 저장해 보세요.'));
+      return;
+    }
+    const n=RV.items.length;
+    if(RV.i>=n){
+      if(!RV.logged){RV.logged=true;logEv('review',{r:RV.right,n:n})}
+      box.appendChild(el('div','score',RV.right+' / '+n));
+      box.appendChild(el('div',null,RV.right===n?'모두 기억했어요. 다음 복습은 간격이 더 길어져요.':'헷갈린 답변은 내일 다시 나와요.'));
+      if(dueNotes().length){const more=el('button','btn','더 복습하기 ('+dueNotes().length+')');more.onclick=startReview;box.appendChild(more)}
+      return;
+    }
+    const it=RV.items[RV.i];
+    const bar=el('div','bar');const fill=el('i');fill.style.width=(RV.i/n*100)+'%';bar.appendChild(fill);box.appendChild(bar);
+    box.appendChild(el('div','meta',(RV.i+1)+' / '+n+' · '+it.p));
+    box.appendChild(el('div','q',it.q));
+    box.appendChild(el('div','small','먼저 기억나는 대로 영어로 답해 보세요. 다 쓰고 나서 답안을 확인하세요.'));
+    const ta=el('textarea','pin');ta.id='rvInput';ta.rows=3;ta.placeholder='My answer ...';
+    box.appendChild(ta);
+    const acts=el('div','row');
+    if(tts){const l=el('button','btn ghost','질문 듣기');l.onclick=()=>say(it.q,1);acts.appendChild(l)}
+    const show=el('button','btn','답안 보기');acts.appendChild(show);
+    box.appendChild(acts);
+    const res=el('div');res.style.display='flex';res.style.flexDirection='column';res.style.gap='8px';box.appendChild(res);
+    show.onclick=()=>{
+      show.disabled=true;ta.readOnly=true;
+      const typed=ta.value.trim();
+      res.textContent='';
+      if(it.b){
+        res.appendChild(el('div','small','개선 답안'));
+        res.appendChild(el('div','en',it.b));
+        if(typed)res.appendChild(el('div','small','내가 쓴 답과의 단어 일치율 '+compare(it.b,typed).pct+'%'));
+      }
+      if(it.a)res.appendChild(el('div','small','이전에 한 답변: '+it.a));
+      if(it.t)res.appendChild(el('div','small',it.t));
+      const r1=el('div','row');
+      if(tts&&it.b){const l=el('button','mini','듣기');l.onclick=()=>say(it.b,1);r1.appendChild(l)}
+      if(it.b){const pr=el('button','mini','따라 말하기');pr.onclick=()=>{startPron();setTarget(it.b);$('pron').scrollIntoView({behavior:'smooth',block:'nearest'})};r1.appendChild(pr)}
+      res.appendChild(r1);
+      res.appendChild(el('div','small','어느 정도 기억났나요?'));
+      const r2=el('div','row');
+      const ok=el('button','btn','기억났어요');ok.onclick=()=>{rateNote(it,true);RV.right++;RV.i++;renderReview()};
+      const no=el('button','btn ghost','헷갈렸어요');no.onclick=()=>{rateNote(it,false);RV.i++;renderReview()};
+      r2.appendChild(ok);r2.appendChild(no);res.appendChild(r2);
+    };
   }
 
   renderControls();renderStarters();renderThread();renderVocab();renderFocus();renderRp();renderPc();
