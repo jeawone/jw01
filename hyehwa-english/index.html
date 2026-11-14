@@ -76,6 +76,11 @@ section.vocab h2{font-size:1rem;margin:0}
 .bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden}
 .bar i{display:block;height:100%;background:var(--accent)}
 .score{font-size:1.6rem;font-weight:700}
+.pin{flex:1;min-width:0;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font:inherit;color:inherit}
+.w.ok{color:var(--accent)}
+.w.bad{color:var(--warn);text-decoration:underline wavy;text-underline-offset:4px}
+.heard{min-height:1.5em;color:var(--muted);overflow-wrap:anywhere}
+.small{font-size:.8rem;color:var(--muted)}
 </style>
 
 <div class="wrap">
@@ -102,9 +107,10 @@ section.vocab h2{font-size:1rem;margin:0}
   </div>
 
   <section class="vocab">
-    <div class="vh"><h2>내 단어장</h2><button class="btn ghost" id="quizStart" type="button">복습 퀴즈</button></div>
+    <div class="vh"><h2>내 단어장</h2><div class="row"><button class="btn ghost" id="quizStart" type="button">복습 퀴즈</button><button class="btn ghost" id="pronStart" type="button">발음 연습</button></div></div>
     <ul class="vl" id="vocab"></ul>
     <div class="quiz" id="quiz" hidden></div>
+    <div class="quiz" id="pron" hidden></div>
     <div class="row"><button class="mini" id="resetChat">대화 새로 시작</button></div>
   </section>
 </div>
@@ -139,7 +145,7 @@ section.vocab h2{font-size:1rem;margin:0}
   let speakOn=store.get('hw.speak',false);
   let vocab=store.get('hw.vocab',[]);
   let msgs=store.get('hw.msgs',null)||[{role:'tutor',text:OPENING}];
-  let busy=false, sample=null, tts=null, dict=null, abort=null;
+  let busy=false, sample=null, tts=null, dict=null, abort=null, dictMode='chat';
 
   function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
 
@@ -320,12 +326,12 @@ Now respond to the learner's last message.`;
     if(!dict)return;
     const mic=$('mic');mic.hidden=false;
     let base='';
-    dict.onState(({state})=>{mic.classList.toggle('rec',state==='listening');mic.textContent=state==='listening'?'듣는 중':'말하기'});
-    dict.onPartial(({text})=>{$('input').value=(base+' '+text).trim();autoGrow()});
-    dict.onFinal(({text})=>{base=($('input').value.trim()===base?base:$('input').value.trim());base=(base+' '+text).trim();$('input').value=base;autoGrow()});
+    dict.onState(({state})=>{if(dictMode!=='chat')return;mic.classList.toggle('rec',state==='listening');mic.textContent=state==='listening'?'듣는 중':'말하기'});
+    dict.onPartial(({text})=>{if(dictMode!=='chat')return;$('input').value=(base+' '+text).trim();autoGrow()});
+    dict.onFinal(({text})=>{if(dictMode!=='chat')return;base=($('input').value.trim()===base?base:$('input').value.trim());base=(base+' '+text).trim();$('input').value=base;autoGrow()});
     mic.onclick=()=>{
       if(mic.classList.contains('rec')){dict.stop();return}
-      base=$('input').value.trim();
+      dictMode='chat';base=$('input').value.trim();
       dict.start().catch(()=>{});
     };
   }
@@ -405,6 +411,140 @@ Now respond to the learner's last message.`;
     box.appendChild(wrap);box.appendChild(feedback);
   }
   $('quizStart').onclick=()=>startQuiz();
+
+  /* ---- 발음 연습 ---- */
+  let P=null, pronSubbed=false;
+  const DEFAULTS=['Nice to meet you. I am happy to be here.','Could you tell me more about that?','I would like to introduce my district to our guests.'];
+  const norm=s=>s.toLowerCase().split('’').join(String.fromCharCode(39)).replace(/[^a-z0-9' ]+/g,' ').split(' ').filter(Boolean);
+  function candidates(){
+    const out=[];
+    msgs.filter(m=>m.role==='tutor'&&m.text).slice(-3).reverse().forEach(m=>{
+      (m.text.match(/[^.!?]+[.!?]*/g)||[]).map(s=>s.trim()).filter(s=>s.split(' ').length>=3).forEach(s=>out.push(s));
+    });
+    pairs().slice(0,5).forEach(p=>out.push(p.en));
+    DEFAULTS.forEach(d=>out.push(d));
+    return Array.from(new Set(out)).slice(0,8);
+  }
+  function compare(target,heard){
+    const tokens=target.replace(/[-–—]/g,' ').split(' ').filter(Boolean);
+    const tn=tokens.map(x=>norm(x).join(' '));
+    const h=norm(heard);
+    const n=tn.length,m=h.length;
+    const dp=Array.from({length:n+1},()=>new Array(m+1).fill(0));
+    for(let i=1;i<=n;i++)for(let j=1;j<=m;j++)
+      dp[i][j]=(tn[i-1]&&tn[i-1]===h[j-1])?dp[i-1][j-1]+1:Math.max(dp[i-1][j],dp[i][j-1]);
+    const ok=new Array(n).fill(false);
+    let i=n,j=m;
+    while(i>0&&j>0){
+      if(tn[i-1]&&tn[i-1]===h[j-1]){ok[i-1]=true;i--;j--}
+      else if(dp[i-1][j]>=dp[i][j-1])i--;else j--;
+    }
+    const scored=tn.filter(Boolean).length||1;
+    const hit=ok.filter((v,k)=>v&&tn[k]).length;
+    tn.forEach((t,k)=>{if(!t)ok[k]=true});
+    return {tokens,ok,pct:Math.round(100*hit/scored)};
+  }
+  function subPron(){
+    if(pronSubbed||!dict)return;pronSubbed=true;
+    dict.onPartial(({text})=>{if(dictMode!=='pron'||!P||!P.refs.heard)return;P.refs.heard.textContent=(P.heard+' '+text).trim()});
+    dict.onFinal(({text})=>{if(dictMode!=='pron'||!P)return;P.heard+=text;if(P.refs.heard)P.refs.heard.textContent=P.heard.trim()});
+    dict.onState(({state})=>{
+      if(dictMode!=='pron'||!P)return;
+      const was=P.listening;P.listening=state!=='idle';
+      if(P.refs.rec){P.refs.rec.textContent=P.listening?'멈추기':'따라 말하기';P.refs.rec.classList.toggle('rec',P.listening)}
+      if(was&&!P.listening){
+        const h=P.heard.trim();
+        if(h){P.result=compare(P.target,h)}else{P.msg='목소리가 잘 들리지 않았어요. 마이크 가까이에서 다시 해 보세요.'}
+        renderPron();
+      }
+    });
+  }
+  function startPron(){
+    const c=candidates();
+    P={target:c[0],heard:'',result:null,listening:false,msg:'',refs:{}};
+    subPron();renderPron();
+  }
+  function setTarget(s){
+    if(dict&&dict.active()){dictMode='x';dict.stop()}
+    if(tts)tts.stop().catch(()=>{});
+    P.target=s;P.heard='';P.result=null;P.msg='';P.listening=false;renderPron();
+  }
+  function say(text,rate){if(tts)tts.speak(text,{language:'en',rate:rate}).catch(()=>{})}
+  function recToggle(){
+    if(!dict)return;
+    if(dict.active()){dict.stop();return}
+    dictMode='pron';P.heard='';P.result=null;P.msg='';
+    if(P.refs.heard)P.refs.heard.textContent='';
+    if(tts)tts.stop().catch(()=>{});
+    dict.start({language:'en'}).catch(e=>{
+      const c=e&&e.code;
+      if(c==='stopped')return;
+      P.msg=c==='not_granted'?'마이크 사용이 허용되지 않았어요.':c==='unavailable'?'이 화면에서는 영어 음성 인식을 쓸 수 없어요.':c==='dismissed'?'허용 창이 닫혔어요. 다시 눌러 주세요.':'음성 인식을 시작하지 못했어요. 잠시 뒤 다시 해 보세요.';
+      renderPron();
+    });
+  }
+  function renderPron(){
+    const box=$('pron');box.hidden=false;box.textContent='';P.refs={};
+    const top=el('div','meta');top.appendChild(el('b',null,'발음 연습'));
+    const close=el('button','mini','닫기');
+    close.onclick=()=>{if(dict&&dict.active()){dictMode='x';dict.stop()}if(tts)tts.stop().catch(()=>{});P=null;box.hidden=true};
+    top.appendChild(close);box.appendChild(top);
+
+    const chips=el('div','row');
+    candidates().forEach(s=>{const c=el('button','chip',s.length>38?s.slice(0,36)+'…':s);c.title=s;c.onclick=()=>setTarget(s);chips.appendChild(c)});
+    box.appendChild(chips);
+    const cr=el('div','row');
+    const ci=el('input','pin');ci.id='pronCustom';ci.placeholder='직접 연습할 영어 문장';
+    const cb=el('button','btn ghost','이 문장으로');
+    cb.onclick=()=>{const v=ci.value.trim();if(v)setTarget(v)};
+    ci.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.isComposing){e.preventDefault();cb.click()}});
+    cr.appendChild(ci);cr.appendChild(cb);box.appendChild(cr);
+
+    const q=el('div','q');
+    const R=P.result;
+    const toks=R?R.tokens:P.target.replace(/[-–—]/g,' ').split(' ').filter(Boolean);
+    toks.forEach((w,k)=>{
+      q.appendChild(el('span','w'+(R?(R.ok[k]?' ok':' bad'):''),w));
+      q.appendChild(document.createTextNode(' '));
+    });
+    box.appendChild(q);
+
+    const acts=el('div','row');
+    if(tts){
+      const a=el('button','btn ghost','듣기');a.onclick=()=>say(P.target,1);
+      const s=el('button','btn ghost','천천히 듣기');s.onclick=()=>say(P.target,0.75);
+      acts.appendChild(a);acts.appendChild(s);
+    }
+    if(dict){
+      const r=el('button','btn',P.listening?'멈추기':'따라 말하기');r.classList.toggle('rec',P.listening);
+      r.onclick=recToggle;P.refs.rec=r;acts.appendChild(r);
+    }
+    box.appendChild(acts);
+    if(!dict)box.appendChild(el('div','small','이 화면에서는 말하기 인식을 쓸 수 없어요. 문장을 듣고 소리 내어 따라 읽는 연습은 할 수 있어요.'));
+    if(!tts&&!dict)box.appendChild(el('div','small','소리 기능이 없는 화면이에요. claude.ai 웹 브라우저(크롬 계열)에서 열어 보세요.'));
+
+    const hl=el('div','small','내가 말한 것');box.appendChild(hl);
+    const hv=el('div','heard',P.heard.trim());P.refs.heard=hv;box.appendChild(hv);
+    if(P.msg)box.appendChild(el('div','notice',P.msg));
+
+    if(R){
+      box.appendChild(el('div','score',R.pct+'%'));
+      const miss=R.tokens.filter((w,k)=>!R.ok[k]);
+      box.appendChild(el('div',null,R.pct>=90?'아주 좋아요. 또렷하게 읽었어요.':R.pct>=70?'좋아요. 표시된 단어만 다시 연습해 볼까요?':'천천히 듣기로 먼저 들어 보고 다시 해 봐요.'));
+      if(miss.length){
+        box.appendChild(el('div','small','다시 연습할 단어 (누르면 발음을 들려줘요)'));
+        const mr=el('div','row');
+        miss.forEach(w=>{
+          const c=el('button','chip word',w);
+          c.onclick=()=>say(norm(w).join(' ')||w,0.8);
+          mr.appendChild(c);
+        });
+        box.appendChild(mr);
+      }
+    }
+    box.appendChild(el('div','small','음성 인식이 알아들은 단어를 비교하는 방식이라, 정확한 발음 채점은 아니에요. 또렷하게 말하는 연습용으로 써 주세요.'));
+  }
+  $('pronStart').onclick=startPron;
 
   renderControls();renderStarters();renderThread();renderVocab();
 
