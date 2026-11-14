@@ -696,6 +696,7 @@ Now respond to the learner's last message.`;
     });
     box.appendChild(bars);
 
+    drawPcTrend(box);
     const weak=Object.keys(stats).filter(k=>stats[k].wrong>0&&vocab.includes(k)).sort((a,b)=>stats[b].wrong-stats[a].wrong).slice(0,5);
     if(weak.length){
       box.appendChild(el('div','small','자주 틀리는 표현'));
@@ -1280,7 +1281,7 @@ Now respond to the learner's last message.`;
       if(!r||typeof r!=='object'||!r.scores)throw new Error('bad');
       pcRes={data:r};
       const sc=r.scores;const avg=Math.round(((+sc.clarity||0)+(+sc.naturalness||0)+(+sc.diplomacy||0))/3*10)/10;
-      logEv('pc',{s:avg});
+      logEv('pc',{s:avg,c:Math.max(0,Math.min(5,+sc.clarity||0)),n:Math.max(0,Math.min(5,+sc.naturalness||0)),dp:Math.max(0,Math.min(5,+sc.diplomacy||0)),p:String(s.name).slice(0,60)});
     }catch(e){pcRes={error:true}}
     renderPc();
   }
@@ -1334,7 +1335,55 @@ Now respond to the learner's last message.`;
     box.appendChild(ul);
     const row=el('div','row');
     const again=el('button','btn','다시 하기');again.onclick=startPc;
-    row.appendChild(again);row.appendChild(close);box.appendChild(row);
+    const tr=el('button','btn ghost','점수 추이 보기');
+    tr.onclick=()=>{renderLog();setTimeout(()=>$('log').scrollIntoView({behavior:'smooth',block:'start'}),50)};
+    row.appendChild(again);row.appendChild(tr);row.appendChild(close);box.appendChild(row);
+  }
+
+  /* ---- 회견 점수 추이 ---- */
+  function drawPcTrend(box){
+    const all=journal.filter(e=>e.k==='pc'&&typeof e.s==='number');
+    box.appendChild(el('div','small','모의 기자회견 점수 추이 (5점 만점)'));
+    if(!all.length){box.appendChild(el('div','small','아직 모의 기자회견 기록이 없어요. 생활 표현집의 구청·정책 설명에서 시작해 보세요.'));return}
+    const rows=all.slice(-10);
+    const NS='http://www.w3.org/2000/svg';
+    const W=320,H=150,L=28,R=14,T=14,B=26;
+    const mk=(tag,attrs,style)=>{const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(style)Object.assign(e.style,style);return e};
+    const svg=mk('svg',{viewBox:'0 0 '+W+' '+H,role:'img','aria-label':'모의 기자회견 평균 점수 추이'},{width:'100%',maxWidth:'460px',height:'auto'});
+    const y=v=>T+(5-v)/4*(H-T-B);
+    const x=i=>rows.length===1?(L+(W-L-R)/2):L+14+i*(W-L-R-28)/(rows.length-1);
+    for(let v=1;v<=5;v++){
+      svg.appendChild(mk('line',{x1:L,x2:W-R,y1:y(v),y2:y(v)},{stroke:'var(--line)',strokeWidth:'1'}));
+      const t=mk('text',{x:L-6,y:y(v)+4,'text-anchor':'end'},{fill:'var(--muted)',fontSize:'10px'});
+      t.textContent=String(v);svg.appendChild(t);
+    }
+    const pts=rows.map((r,i)=>[x(i),y(Math.max(1,Math.min(5,r.s)))]);
+    if(pts.length>1)svg.appendChild(mk('polyline',{points:pts.map(p=>p.join(',')).join(' '),fill:'none'},{stroke:'var(--accent)',strokeWidth:'2'}));
+    rows.forEach((r,i)=>{
+      svg.appendChild(mk('circle',{cx:pts[i][0],cy:pts[i][1],r:i===rows.length-1?5:3.5},{fill:'var(--accent)'}));
+      if(i===rows.length-1||rows.length<=5){
+        const lab=mk('text',{x:pts[i][0],y:pts[i][1]-9,'text-anchor':'middle'},{fill:'var(--ink)',fontSize:'10px'});
+        lab.textContent=String(r.s);svg.appendChild(lab);
+      }
+      if(i===0||i===rows.length-1||rows.length<=6){
+        const dl=mk('text',{x:pts[i][0],y:H-8,'text-anchor':'middle'},{fill:'var(--muted)',fontSize:'10px'});
+        dl.textContent=r.d.slice(5).replace('-','/');svg.appendChild(dl);
+      }
+    });
+    box.appendChild(svg);
+    if(rows.length>1){
+      const diff=Math.round((rows[rows.length-1].s-rows[0].s)*10)/10;
+      box.appendChild(el('div',null,'처음 '+rows[0].s+' → 최근 '+rows[rows.length-1].s+' ('+(diff>0?'+':'')+diff+')'));
+    }
+    const ul=el('ul','vl');
+    rows.slice(-5).reverse().forEach(r=>{
+      const li=el('li');const sp=el('span');
+      sp.appendChild(el('b',null,r.s+' / 5'));
+      sp.appendChild(document.createTextNode('  '+r.d.slice(5).replace('-','/')+(typeof r.p==='string'?' · '+r.p:'')));
+      if(r.c||r.n||r.dp){sp.appendChild(el('br'));sp.appendChild(el('span','small','명료 '+(r.c||'-')+' · 자연 '+(r.n||'-')+' · 외교 '+(r.dp||'-')))}
+      li.appendChild(sp);ul.appendChild(li);
+    });
+    box.appendChild(ul);
   }
 
   renderControls();renderStarters();renderThread();renderVocab();renderFocus();renderRp();renderPc();
