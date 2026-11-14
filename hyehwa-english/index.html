@@ -63,6 +63,19 @@ section.vocab h2{font-size:1rem;margin:0}
 .dots::after{content:'';animation:d 1.2s steps(4,end) infinite}
 @keyframes d{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}}
 @media (prefers-reduced-motion:reduce){.dots::after{animation:none;content:'...'}}
+.vh{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.quiz{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.quiz .q{font-size:1.2rem;font-weight:600;overflow-wrap:anywhere;text-wrap:balance}
+.quiz .meta{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;color:var(--muted);font-size:.85rem}
+.opts{display:flex;flex-direction:column;gap:8px}
+.opt{text-align:left;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:10px 14px;cursor:pointer;overflow-wrap:anywhere}
+.opt:hover:not(:disabled){border-color:var(--accent)}
+.opt.good{background:var(--accent-soft);border-color:var(--accent)}
+.opt.bad{background:var(--warn-soft);border-color:var(--warn)}
+.opt:disabled{cursor:default}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent)}
+.score{font-size:1.6rem;font-weight:700}
 </style>
 
 <div class="wrap">
@@ -89,8 +102,9 @@ section.vocab h2{font-size:1rem;margin:0}
   </div>
 
   <section class="vocab">
-    <h2>내 단어장</h2>
+    <div class="vh"><h2>내 단어장</h2><button class="btn ghost" id="quizStart" type="button">복습 퀴즈</button></div>
     <ul class="vl" id="vocab"></ul>
+    <div class="quiz" id="quiz" hidden></div>
     <div class="row"><button class="mini" id="resetChat">대화 새로 시작</button></div>
   </section>
 </div>
@@ -315,6 +329,82 @@ Now respond to the learner's last message.`;
       dict.start().catch(()=>{});
     };
   }
+
+  /* ---- 복습 퀴즈 ---- */
+  const stats=store.get('hw.stats',{});
+  let quizDir=store.get('hw.quizDir','en2ko'), Q=null;
+  function pairs(){
+    return vocab.map(v=>{const i=v.indexOf('=');if(i<1)return null;return {key:v,en:v.slice(0,i).trim(),ko:v.slice(i+1).trim()}}).filter(p=>p&&p.en&&p.ko);
+  }
+  function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+  function weight(p){const s=stats[p.key]||{right:0,wrong:0};return s.wrong*2-s.right+Math.random()*2}
+  function startQuiz(items){
+    const ps=pairs();const box=$('quiz');
+    if(ps.length<2){
+      box.hidden=false;box.textContent='';
+      box.appendChild(el('div',null,'퀴즈는 "영어 = 뜻" 단어가 2개 이상 모이면 시작할 수 있어요. 대화하다가 혜화가 알려 주는 단어를 눌러 담아 보세요.'));
+      const c=el('button','btn ghost','닫기');c.onclick=()=>{box.hidden=true};box.appendChild(c);return;
+    }
+    const list=items||ps.slice().sort((a,b)=>weight(b)-weight(a)).slice(0,10);
+    Q={items:shuffle(list),i:0,right:0,wrong:[],done:false};
+    renderQuiz();
+  }
+  function renderQuiz(){
+    const box=$('quiz');box.hidden=false;box.textContent='';
+    const top=el('div','meta');
+    const seg=el('div','seg');
+    [['en2ko','영어 → 뜻'],['ko2en','뜻 → 영어']].forEach(([k,l])=>{
+      const b=el('button',null,l);b.setAttribute('aria-pressed',String(k===quizDir));
+      b.onclick=()=>{quizDir=k;store.set('hw.quizDir',k);startQuiz()};seg.appendChild(b);
+    });
+    const close=el('button','mini','닫기');close.onclick=()=>{Q=null;box.hidden=true};
+    top.appendChild(seg);top.appendChild(close);box.appendChild(top);
+
+    if(Q.i>=Q.items.length){
+      box.appendChild(el('div','score',Q.right+' / '+Q.items.length));
+      box.appendChild(el('div',null,Q.wrong.length?'아래 표현은 한 번 더 봐 두세요.':'전부 맞혔어요. 잘하셨어요.'));
+      if(Q.wrong.length){
+        const ul=el('ul','vl');
+        Q.wrong.forEach(p=>{const li=el('li');li.appendChild(el('span',null,p.en+' = '+p.ko));ul.appendChild(li)});
+        box.appendChild(ul);
+      }
+      const r=el('div','row');
+      const again=el('button','btn','다시 하기');again.onclick=()=>startQuiz();r.appendChild(again);
+      if(Q.wrong.length){const w=el('button','btn ghost','틀린 것만 다시');const ws=Q.wrong.slice();w.onclick=()=>startQuiz(ws);r.appendChild(w)}
+      box.appendChild(r);return;
+    }
+
+    const p=Q.items[Q.i];
+    const bar=el('div','bar');const fill=el('i');fill.style.width=(Q.i/Q.items.length*100)+'%';bar.appendChild(fill);box.appendChild(bar);
+    box.appendChild(el('div','meta',(Q.i+1)+' / '+Q.items.length));
+    const qText=quizDir==='en2ko'?p.en:p.ko, ans=quizDir==='en2ko'?p.ko:p.en;
+    const q=el('div','q',qText);box.appendChild(q);
+    if(quizDir==='en2ko'&&tts){const s=el('button','mini','듣기');s.onclick=()=>speak(p.en);box.appendChild(s)}
+
+    const others=shuffle(pairs().filter(x=>x.key!==p.key).map(x=>quizDir==='en2ko'?x.ko:x.en).filter(t=>t!==ans));
+    const opts=shuffle([ans].concat(others.slice(0,3)));
+    const wrap=el('div','opts');
+    const feedback=el('div');
+    opts.forEach(o=>{
+      const b=el('button','opt',o);
+      b.onclick=()=>{
+        if(Q.done)return;Q.done=true;
+        const st=stats[p.key]||(stats[p.key]={right:0,wrong:0});
+        if(o===ans){Q.right++;st.right++;b.classList.add('good')}
+        else{st.wrong++;Q.wrong.push(p);b.classList.add('bad');
+          wrap.querySelectorAll('.opt').forEach(x=>{if(x.textContent===ans)x.classList.add('good')});
+          feedback.textContent='정답: '+ans}
+        store.set('hw.stats',stats);
+        wrap.querySelectorAll('.opt').forEach(x=>x.disabled=true);
+        const n=el('button','btn',Q.i+1>=Q.items.length?'결과 보기':'다음');
+        n.onclick=()=>{Q.i++;Q.done=false;renderQuiz()};
+        box.appendChild(n);n.focus();
+      };
+      wrap.appendChild(b);
+    });
+    box.appendChild(wrap);box.appendChild(feedback);
+  }
+  $('quizStart').onclick=()=>startQuiz();
 
   renderControls();renderStarters();renderThread();renderVocab();
 
