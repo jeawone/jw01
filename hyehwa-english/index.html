@@ -1,0 +1,332 @@
+<title>혜화 영어 대화방</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+KR:wght@400;500;700&display=swap">
+<style>
+/* Layout: one centered chat column; sticky header with level/scenario, scrolling thread, docked composer, vocabulary list below */
+:root{
+  --bg:#f5f7f7; --surface:#ffffff; --ink:#15211f; --muted:#5d6e6a; --line:#dbe3e1;
+  --accent:#0d7a6b; --accent-ink:#ffffff; --accent-soft:#dff1ee;
+  --me:#e9eef6; --warn:#a05a00; --warn-soft:#fdf0dc;
+  --font:'Inter','Noto Sans KR',system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f1716; --surface:#172220; --ink:#e6efed; --muted:#94a8a3; --line:#27373a;
+  --accent:#3fc2ae; --accent-ink:#06211c; --accent-soft:#16332f;
+  --me:#1d2a3a; --warn:#f0b35c; --warn-soft:#33281a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1716; --surface:#172220; --ink:#e6efed; --muted:#94a8a3; --line:#27373a;
+  --accent:#3fc2ae; --accent-ink:#06211c; --accent-soft:#16332f;
+  --me:#1d2a3a; --warn:#f0b35c; --warn-soft:#33281a; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:16px;line-height:1.55;margin:0;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:16px;padding-block:16px 40px}
+header{display:flex;flex-direction:column;gap:12px}
+h1{font-size:1.35rem;margin:0;font-weight:700;text-wrap:balance}
+.sub{color:var(--muted);font-size:.9rem;margin:2px 0 0}
+.controls{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center}
+.seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface)}
+.seg button{border:0;background:transparent;color:var(--muted);padding:7px 12px;font:inherit;font-size:.88rem;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);font-weight:600}
+select,textarea,button{font:inherit;color:inherit}
+select{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:.88rem;max-width:100%}
+button:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.toggle{display:flex;align-items:center;gap:6px;font-size:.88rem;color:var(--muted)}
+#thread{display:flex;flex-direction:column;gap:14px;min-height:280px}
+.msg{display:flex;flex-direction:column;gap:6px;max-width:88%;min-width:0}
+.msg.tutor{align-self:flex-start}
+.msg.me{align-self:flex-end;align-items:flex-end}
+.bubble{padding:10px 14px;border-radius:14px;white-space:pre-wrap;overflow-wrap:anywhere}
+.tutor .bubble{background:var(--surface);border:1px solid var(--line);border-top-left-radius:4px}
+.me .bubble{background:var(--me);border-top-right-radius:4px}
+.who{font-size:.75rem;color:var(--muted);letter-spacing:.03em}
+.fix{background:var(--warn-soft);color:var(--ink);border-left:3px solid var(--warn);padding:8px 12px;border-radius:6px;font-size:.88rem;white-space:pre-wrap;overflow-wrap:anywhere}
+.fix b{color:var(--warn)}
+.ok{font-size:.8rem;color:var(--accent)}
+.row{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:5px 12px;font-size:.84rem;cursor:pointer}
+.chip:hover{border-color:var(--accent)}
+.chip.word{background:var(--accent-soft);border-color:transparent}
+.mini{border:0;background:transparent;color:var(--accent);font-size:.82rem;cursor:pointer;padding:2px 0;text-align:left}
+.composer{display:flex;gap:8px;align-items:flex-end;position:sticky;bottom:0;background:var(--bg);padding-block:8px calc(8px + env(safe-area-inset-bottom,0px))}
+textarea{flex:1;min-width:0;resize:none;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px;max-height:140px}
+.btn{border:0;border-radius:12px;padding:10px 16px;background:var(--accent);color:var(--accent-ink);font-weight:600;cursor:pointer}
+.btn:disabled{opacity:.5;cursor:default}
+.btn.ghost{background:var(--surface);color:var(--ink);border:1px solid var(--line);font-weight:500}
+.btn.rec{background:var(--warn);color:var(--bg)}
+.notice{background:var(--warn-soft);border-radius:8px;padding:10px 14px;font-size:.9rem}
+section.vocab{border-top:1px solid var(--line);padding-top:16px;display:flex;flex-direction:column;gap:8px}
+section.vocab h2{font-size:1rem;margin:0}
+.vl{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.vl li{display:flex;justify-content:space-between;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 12px;min-width:0}
+.vl span{overflow-wrap:anywhere;min-width:0}
+.dots::after{content:'';animation:d 1.2s steps(4,end) infinite}
+@keyframes d{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}}
+@media (prefers-reduced-motion:reduce){.dots::after{animation:none;content:'...'}}
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>혜화와 영어 한마디</h1>
+      <p class="sub">틀려도 괜찮아요. 한 문장씩 말하면 혜화가 자연스럽게 답하고, 고칠 부분만 한국어로 짚어 드려요.</p>
+    </div>
+    <div class="controls">
+      <div class="seg" id="levels" role="group" aria-label="수준"></div>
+      <select id="scenario" aria-label="대화 주제"></select>
+      <label class="toggle"><input type="checkbox" id="speakToggle"> 답변 읽어주기</label>
+    </div>
+  </header>
+
+  <div id="notice" class="notice" hidden></div>
+  <div id="thread" aria-live="polite"></div>
+  <div class="row" id="starters"></div>
+
+  <div class="composer">
+    <button class="btn ghost" id="mic" hidden aria-label="음성으로 입력">말하기</button>
+    <textarea id="input" rows="1" placeholder="영어로 한 문장 써 보세요 (막히면 한국어도 괜찮아요)"></textarea>
+    <button class="btn" id="send">보내기</button>
+  </div>
+
+  <section class="vocab">
+    <h2>내 단어장</h2>
+    <ul class="vl" id="vocab"></ul>
+    <div class="row"><button class="mini" id="resetChat">대화 새로 시작</button></div>
+  </section>
+</div>
+
+<script>
+(function(){
+  const LEVELS=[['beginner','입문'],['intermediate','중급'],['advanced','상급']];
+  const SCENARIOS=[
+    ['free','자유 대화'],
+    ['daily','일상 이야기'],
+    ['travel','여행·공항·호텔'],
+    ['work','직장·회의'],
+    ['policy','정책·행정 토론'],
+    ['economy','경제·투자 뉴스'],
+    ['interview','영어 인터뷰 연습']
+  ];
+  const STARTERS=[
+    'Hi! Can we just chat?',
+    'I want to practice talking about my job.',
+    'Help me introduce Seocho-gu to a foreign visitor.',
+    'What do you think about the economy these days?'
+  ];
+  const OPENING='Hi, I\'m Hyehwa! I\'m glad you\'re here. How was your day so far?';
+
+  const $=id=>document.getElementById(id);
+  const store={
+    get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},
+    set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
+  };
+  let level=store.get('hw.level','beginner');
+  let scenario=store.get('hw.scenario','free');
+  let speakOn=store.get('hw.speak',false);
+  let vocab=store.get('hw.vocab',[]);
+  let msgs=store.get('hw.msgs',null)||[{role:'tutor',text:OPENING}];
+  let busy=false, sample=null, tts=null, dict=null, abort=null;
+
+  function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
+
+  function renderControls(){
+    const seg=$('levels');seg.textContent='';
+    LEVELS.forEach(([k,label])=>{
+      const b=el('button',null,label);b.setAttribute('aria-pressed',String(k===level));
+      b.onclick=()=>{level=k;store.set('hw.level',k);renderControls()};
+      seg.appendChild(b);
+    });
+    const s=$('scenario');s.textContent='';
+    SCENARIOS.forEach(([k,label])=>{const o=el('option',null,label);o.value=k;if(k===scenario)o.selected=true;s.appendChild(o)});
+    $('speakToggle').checked=speakOn;
+    $('speakToggle').parentElement.hidden=!tts;
+  }
+  $('scenario').onchange=e=>{scenario=e.target.value;store.set('hw.scenario',scenario)};
+  $('speakToggle').onchange=e=>{speakOn=e.target.checked;store.set('hw.speak',speakOn);if(!speakOn&&tts)tts.stop()};
+
+  function renderThread(){
+    const t=$('thread');t.textContent='';
+    msgs.forEach((m,i)=>{
+      const box=el('div','msg '+(m.role==='me'?'me':'tutor'));
+      box.appendChild(el('div','who',m.role==='me'?'나':'혜화'));
+      const b=el('div','bubble',m.text);
+      if(m.pending&&!m.text){b.appendChild(el('span','dots'))}
+      box.appendChild(b);
+      if(m.role==='tutor'&&m.text&&tts&&!m.pending){
+        const sp=el('button','mini','듣기');
+        sp.onclick=()=>speak(m.text);box.appendChild(sp);
+      }
+      if(m.role==='me'&&m.fix!=null){
+        if(m.fix==='OK'){box.appendChild(el('div','ok','자연스러워요'))}
+        else{const f=el('div','fix');f.appendChild(el('b',null,'이렇게 말하면 더 자연스러워요\n'));f.appendChild(document.createTextNode(m.fix));box.appendChild(f)}
+      }
+      if(m.role==='tutor'&&m.words&&m.words.length&&!m.pending){
+        const r=el('div','row');
+        m.words.forEach(w=>{
+          const c=el('button','chip word','+ '+w);
+          c.title='단어장에 담기';
+          c.onclick=()=>addWord(w);
+          r.appendChild(c);
+        });
+        box.appendChild(r);
+      }
+      t.appendChild(box);
+    });
+    $('starters').hidden=msgs.length>1;
+    window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'});
+  }
+
+  function renderStarters(){
+    const r=$('starters');r.textContent='';
+    STARTERS.forEach(s=>{const c=el('button','chip',s);c.onclick=()=>{$('input').value=s;$('input').focus()};r.appendChild(c)});
+  }
+
+  function renderVocab(){
+    const ul=$('vocab');ul.textContent='';
+    if(!vocab.length){ul.appendChild(el('li',null,'혜화가 알려 주는 단어를 누르면 여기에 모여요.'));return}
+    vocab.forEach((w,i)=>{
+      const li=el('li');li.appendChild(el('span',null,w));
+      const x=el('button','mini','삭제');x.onclick=()=>{vocab.splice(i,1);store.set('hw.vocab',vocab);renderVocab()};
+      li.appendChild(x);ul.appendChild(li);
+    });
+  }
+  function addWord(w){if(!vocab.includes(w)){vocab.unshift(w);store.set('hw.vocab',vocab);renderVocab()}}
+
+  function speak(text){
+    if(!tts)return;
+    tts.speak(text,{language:'en'}).catch(()=>{});
+  }
+
+  function levelGuide(){
+    return {
+      beginner:'The learner is a beginner. Use very simple words and short sentences (under 12 words). Be warm and patient.',
+      intermediate:'The learner is intermediate. Use natural everyday English with a few useful phrasal verbs or idioms.',
+      advanced:'The learner is advanced. Use natural, nuanced English at native speed and occasionally challenge them with sophisticated vocabulary.'
+    }[level];
+  }
+  function scenarioGuide(){
+    return {
+      free:'Free conversation. Follow the learner\'s interests.',
+      daily:'Everyday small talk (food, weekend, family, hobbies).',
+      travel:'Travel situations: airport, hotel, restaurant, directions. Play the other party when helpful.',
+      work:'Workplace English: meetings, emails, presentations, negotiation.',
+      policy:'Discussing local government and public policy in English (e.g., welfare, urban planning, resident services, digital transformation of public administration). The learner works for a district office in Seoul. Help them explain policies to foreign audiences.',
+      economy:'Discussing international economics, markets and investing news in English, with clear explanations of terms.',
+      interview:'Act as an interviewer in an English interview and ask follow-up questions.'
+    }[scenario];
+  }
+
+  function buildPrompt(){
+    const hist=msgs.filter(m=>!m.pending||m.text).slice(-14).map(m=>(m.role==='me'?'Learner: ':'Hyehwa: ')+m.text).join('\n');
+    return `You are "Hyehwa", a friendly English conversation partner and tutor for a Korean adult learner.
+${levelGuide()}
+Topic: ${scenarioGuide()}
+
+Rules:
+- Reply in English as a real conversation partner: react to what they said, then keep it going with ONE question. Keep it to 1-3 short sentences.
+- If the learner wrote Korean or mixed Korean, gently give the English version in the FIX section and still continue the conversation in English.
+- Correct only genuine mistakes or clearly unnatural phrasing in the learner's LAST message. Write corrections in Korean, short: show the better sentence in English, then a one-line Korean reason. If their sentence is fine, write exactly OK.
+- Offer 1-2 useful words or phrases from the conversation, each as "english phrase = 한국어 뜻".
+- Never add anything outside the three sections below.
+
+Output format, exactly:
+[REPLY]
+(your English reply)
+[FIX]
+(OK or the correction in Korean)
+[WORDS]
+(one "phrase = 뜻" per line, 0-2 lines)
+
+Conversation so far:
+${hist}
+
+Now respond to the learner's last message.`;
+  }
+
+  function parse(raw){
+    const out={reply:'',fix:null,words:[]};
+    const re=/\[(REPLY|FIX|WORDS)\]/g;let m,marks=[];
+    while((m=re.exec(raw)))marks.push({k:m[1],s:m.index,e:re.lastIndex});
+    if(!marks.length){out.reply=raw.trim();return out}
+    marks.forEach((mk,i)=>{
+      const body=raw.slice(mk.e,i+1<marks.length?marks[i+1].s:raw.length).trim();
+      if(mk.k==='REPLY')out.reply=body;
+      if(mk.k==='FIX')out.fix=body;
+      if(mk.k==='WORDS')out.words=body.split('\n').map(s=>s.replace(/^[-*•\s]+/,'').trim()).filter(Boolean).slice(0,2);
+    });
+    return out;
+  }
+
+  function persist(){store.set('hw.msgs',msgs.filter(m=>!m.pending).slice(-40))}
+
+  async function send(){
+    const input=$('input');const text=input.value.trim();
+    if(!text||busy)return;
+    if(!sample){showNotice('이 화면에서는 Claude 연결을 쓸 수 없어요. claude.ai에서 열어 주세요.');return}
+    if(dict)try{dict.stop()}catch(e){}
+    input.value='';autoGrow();
+    busy=true;$('send').disabled=true;
+    const mine={role:'me',text,fix:null};
+    const tut={role:'tutor',text:'',pending:true,words:[]};
+    msgs.push(mine,tut);renderThread();
+    abort=new AbortController();
+    try{
+      const prompt=buildPrompt();
+      const res=await sample(prompt,{
+        cache:false,signal:abort.signal,modelTier:'quick',
+        onText:({text:t})=>{const p=parse(t);tut.text=p.reply;renderThread()}
+      });
+      const p=parse(res.text);
+      tut.text=p.reply||res.text.trim();tut.words=p.words;tut.pending=false;
+      if(p.fix!=null){mine.fix=p.fix}
+      hideNotice();
+      renderThread();persist();
+      if(speakOn)speak(tut.text);
+    }catch(err){
+      msgs.pop();
+      if(!tut.text){input.value=text;msgs.pop()} else {tut.pending=false;persist()}
+      const c=err&&err.code;
+      showNotice(c==='not_granted'?'Claude 연결을 허용해야 대화할 수 있어요. 다시 보내면 허용 창이 떠요.'
+        :c==='rate_limited'?'잠깐 너무 빨랐어요. 조금 뒤에 다시 보내 주세요.'
+        :'답변을 가져오지 못했어요. 다시 한 번 보내 주세요.');
+      renderThread();
+    }finally{busy=false;$('send').disabled=false;abort=null}
+  }
+
+  function showNotice(t){const n=$('notice');n.textContent=t;n.hidden=false}
+  function hideNotice(){$('notice').hidden=true}
+
+  function autoGrow(){const i=$('input');i.style.height='auto';i.style.height=Math.min(i.scrollHeight,140)+'px'}
+  $('input').addEventListener('input',autoGrow);
+  $('input').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();send()}});
+  $('send').onclick=send;
+  $('resetChat').onclick=()=>{if(abort)abort.abort();msgs=[{role:'tutor',text:OPENING}];persist();hideNotice();renderThread()};
+
+  function setupDictation(){
+    if(!dict)return;
+    const mic=$('mic');mic.hidden=false;
+    let base='';
+    dict.onState(({state})=>{mic.classList.toggle('rec',state==='listening');mic.textContent=state==='listening'?'듣는 중':'말하기'});
+    dict.onPartial(({text})=>{$('input').value=(base+' '+text).trim();autoGrow()});
+    dict.onFinal(({text})=>{base=($('input').value.trim()===base?base:$('input').value.trim());base=(base+' '+text).trim();$('input').value=base;autoGrow()});
+    mic.onclick=()=>{
+      if(mic.classList.contains('rec')){dict.stop();return}
+      base=$('input').value.trim();
+      dict.start().catch(()=>{});
+    };
+  }
+
+  renderControls();renderStarters();renderThread();renderVocab();
+
+  if(window.claude&&window.claude.use){
+    window.claude.use('sample').then(s=>{
+      sample=s;
+      if(!s)showNotice('이 화면에서는 Claude 연결을 쓸 수 없어요. claude.ai에서 열어 주세요.');
+    }).catch(()=>{});
+    window.claude.use('tts').then(t=>{tts=t;renderControls();renderThread()}).catch(()=>{});
+    window.claude.use('dictation').then(d=>{dict=d;setupDictation()}).catch(()=>{});
+  } else {
+    showNotice('이 화면에서는 Claude 연결을 쓸 수 없어요. claude.ai에서 열어 주세요.');
+  }
+})();
+</script>
