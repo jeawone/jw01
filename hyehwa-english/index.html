@@ -88,6 +88,7 @@ section.vocab h2{font-size:1rem;margin:0}
 .pl .acts{display:flex;gap:12px;flex-wrap:wrap}
 .pl .en{font-weight:600}
 .rpchip{border-radius:12px;text-align:left}
+.polbox{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:10px}
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
 .tile{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:2px;min-width:0}
 .tile b{font-size:1.4rem;font-variant-numeric:tabular-nums}
@@ -936,6 +937,7 @@ Now respond to the learner's last message.`;
     top.appendChild(close);box.appendChild(top);
     const chips=el('div','row');box.appendChild(chips);
     const rpRow=el('div','row');box.appendChild(rpRow);
+    const polBox=el('div','polbox');box.appendChild(polBox);
     const fi=el('input','pin');fi.id='phFilter';fi.placeholder='표현이나 뜻으로 찾기';
     box.appendChild(fi);
     const ul=el('ul','vl pl');box.appendChild(ul);
@@ -950,7 +952,7 @@ Now respond to the learner's last message.`;
     function drawList(){
       ul.textContent='';
       const q=fi.value.trim().toLowerCase();
-      rpRow.textContent='';
+      rpRow.textContent='';drawPolicies(polBox,!q&&PHRASES[phCat].n==='구청·정책 설명');
       {const r=ROLES[PHRASES[phCat].n];if(r&&!q){const b=el('button','btn','역할극 시작: '+r.title);b.onclick=()=>startRoleplay(PHRASES[phCat].n);rpRow.appendChild(b)}}
       const rows=q?PHRASES.reduce((a,c)=>a.concat(c.items),[]).filter(it=>it[0].toLowerCase().includes(q)||it[1].toLowerCase().includes(q)):PHRASES[phCat].items;
       if(!rows.length){ul.appendChild(el('li',null,'찾는 표현이 없어요.'));return}
@@ -998,11 +1000,11 @@ Now respond to the learner's last message.`;
   });
   let rp=store.get('hw.rp',null);
   function rpItems(){const c=rp&&PHRASES.find(x=>x.n===rp.cat);return c?c.items:[]}
-  function startRoleplay(cat){
+  function startRoleplay(cat,pi){
     const r=ROLES[cat];if(!r)return;
     if(busy){showNotice('혜화가 답하는 중이에요. 잠시 뒤에 다시 눌러 주세요.');return}
-    rp={cat:cat,used:[]};store.set('hw.rp',rp);
-    msgs=[{role:'tutor',text:r.open}];persist();
+    rp={cat:cat,used:[],pol:(pi==null?null:(policies[pi]||null))};store.set('hw.rp',rp);
+    msgs=[{role:'tutor',text:rpOpen(r)}];persist();
     hideNotice();renderRp();renderThread();
     setTimeout(()=>{$('rp').scrollIntoView({behavior:'smooth',block:'start'});$('input').focus({preventScroll:true})},80);
   }
@@ -1017,7 +1019,7 @@ Now respond to the learner's last message.`;
     if(!rp||!ROLES[rp.cat])return '';
     const r=ROLES[rp.cat];
     const left=rpItems().map(i=>i[0]).filter(e=>!rp.used.includes(e));
-    return `\n\nRole-play: In the REPLY section, stay fully in character as ${r.role}. The learner plays ${r.me}. Keep it realistic and short, and move the scene forward. Create natural moments where the learner can use these expressions (still unused: ${left.join(' | ')||'none, so just enjoy the scene'}). Never break character inside REPLY; give all teaching comments only in the FIX and WORDS sections. If the scene reaches a natural ending, continue with a new related moment.`;
+    return `\n\nRole-play: In the REPLY section, stay fully in character as ${r.role}. The learner plays ${r.me}. Keep it realistic and short, and move the scene forward. Create natural moments where the learner can use these expressions (still unused: ${left.join(' | ')||'none, so just enjoy the scene'}). Never break character inside REPLY; give all teaching comments only in the FIX and WORDS sections. If the scene reaches a natural ending, continue with a new related moment.`+polGuide();
   }
   function renderRp(){
     const box=$('rp');box.textContent='';
@@ -1045,8 +1047,64 @@ Now respond to the learner's last message.`;
   const baseReset=$('resetChat').onclick;
   $('resetChat').onclick=()=>{
     baseReset();
-    if(rp&&ROLES[rp.cat]){rp.used=[];store.set('hw.rp',rp);msgs=[{role:'tutor',text:ROLES[rp.cat].open}];persist();renderRp();renderThread()}
+    if(rp&&ROLES[rp.cat]){rp.used=[];store.set('hw.rp',rp);msgs=[{role:'tutor',text:rpOpen(ROLES[rp.cat])}];persist();renderRp();renderThread()}
   };
+
+  /* ---- 서초구 정책 등록 ---- */
+  let policies=store.get('hw.policies',[]);
+  function polName(p){return p.en||p.ko}
+  function rpOpen(r){
+    if(rp&&rp.pol)return `Thanks for meeting with me. I've heard about ${polName(rp.pol)}. Could you tell me what it is, and why your district started it?`;
+    return r.open;
+  }
+  function polGuide(){
+    if(!rp||rp.cat!=='구청·정책 설명')return '';
+    const list=rp.pol?[rp.pol]:policies;
+    if(!list.length)return '';
+    const txt=list.map(p=>'- '+polName(p)+(p.en&&p.ko?' ('+p.ko+')':'')+(p.desc?': '+p.desc:'')).join('\n');
+    return `\n\nThe official's real policies (ask about these by name, one at a time; ${rp.pol?'focus on this one policy':'choose among them'}). Base your questions only on the facts given and do not invent figures or details:\n${txt}`;
+  }
+  function drawPolicies(box,show){
+    box.textContent='';box.hidden=!show;
+    if(!show)return;
+    box.appendChild(el('div','small','내가 설명할 서초구 정책. 등록하면 역할극에서 기자가 이 정책 이름으로 질문해요.'));
+    if(policies.length){
+      const ul=el('ul','vl');
+      policies.forEach((p,i)=>{
+        const li=el('li');const sp=el('span');
+        sp.appendChild(el('b',null,polName(p)));
+        if(p.en&&p.ko)sp.appendChild(document.createTextNode(' ('+p.ko+')'));
+        if(p.desc){sp.appendChild(el('br'));sp.appendChild(el('span','small',p.desc))}
+        li.appendChild(sp);
+        const acts=el('div','acts');
+        const go=el('button','mini','이 정책으로 역할극');go.onclick=()=>startRoleplay('구청·정책 설명',i);
+        const sv=el('button','mini','단어장에 담기');
+        sv.onclick=()=>{
+          const en=polName(p);
+          if(!vocab.some(x=>x.split('=')[0].trim().toLowerCase()===en.toLowerCase())){vocab.unshift(p.en&&p.ko?(en+' = '+p.ko):en);store.set('hw.vocab',vocab);renderVocab()}
+          sv.textContent='담음';sv.disabled=true;
+        };
+        const dl=el('button','mini','삭제');
+        dl.onclick=()=>{policies.splice(i,1);store.set('hw.policies',policies);drawPolicies(box,true)};
+        acts.appendChild(go);acts.appendChild(sv);acts.appendChild(dl);li.appendChild(acts);ul.appendChild(li);
+      });
+      box.appendChild(ul);
+    } else {
+      box.appendChild(el('div','small','아직 등록한 정책이 없어요. 아래에 정책 이름을 넣어 주세요.'));
+    }
+    if(policies.length>=8){box.appendChild(el('div','small','정책은 8개까지 등록할 수 있어요.'));return}
+    const ko=el('input','pin');ko.id='polKo';ko.placeholder='정책 이름 (한국어)';
+    const en=el('input','pin');en.id='polEn';en.placeholder='영어 이름 (예: Senior Care Program)';
+    const ds=el('input','pin');ds.id='polDesc';ds.placeholder='한 줄 설명 (한국어나 영어, 사실만 간단히)';
+    const add=el('button','btn ghost','정책 등록');
+    add.onclick=()=>{
+      const k=ko.value.trim(),e=en.value.trim(),d=ds.value.trim();
+      if(!k&&!e)return;
+      policies.push({ko:k.slice(0,60),en:e.slice(0,80),desc:d.slice(0,240)});
+      store.set('hw.policies',policies);drawPolicies(box,true);
+    };
+    box.appendChild(ko);box.appendChild(en);box.appendChild(ds);box.appendChild(add);
+  }
 
   renderControls();renderStarters();renderThread();renderVocab();renderFocus();renderRp();
 
