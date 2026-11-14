@@ -1584,9 +1584,10 @@ Now respond to the learner's last message.`;
     const S=[
       {k:'quiz',name:'단어 퀴즈',color:'var(--accent)',sym:'●'},
       {k:'daily',name:'오늘의 표현',color:'var(--warn)',sym:'■'},
-      {k:'review',name:'답변 복습',color:'var(--ink)',sym:'◆'}
+      {k:'review',name:'답변 복습',color:'var(--ink)',sym:'◆'},
+      {k:'fill',name:'빈칸 퀴즈',color:'var(--muted)',sym:'▲'}
     ];
-    const evs=journal.filter(e=>(e.k==='quiz'||e.k==='daily'||e.k==='review')&&e.n>0).slice(-15);
+    const evs=journal.filter(e=>(e.k==='quiz'||e.k==='daily'||e.k==='review'||e.k==='fill')&&e.n>0).slice(-15);
     box.appendChild(el('div','small','복습 추이 (정답·기억 비율 %)'));
     if(!evs.length){box.appendChild(el('div','small','아직 복습 기록이 없어요. 복습 퀴즈나 오늘의 표현을 풀어 보세요.'));return}
     const lg=el('div','row');
@@ -1611,6 +1612,7 @@ Now respond to the learner's last message.`;
         const cx=x(p.i),cy=y(p.v);let m;
         if(s.k==='quiz')m=mk('circle',{cx:cx,cy:cy,r:4});
         else if(s.k==='daily')m=mk('rect',{x:cx-3.5,y:cy-3.5,width:7,height:7});
+        else if(s.k==='fill')m=mk('polygon',{points:cx+','+(cy-5)+' '+(cx+5)+','+(cy+4)+' '+(cx-5)+','+(cy+4)});
         else m=mk('polygon',{points:cx+','+(cy-5)+' '+(cx+5)+','+cy+' '+cx+','+(cy+5)+' '+(cx-5)+','+cy});
         m.style.fill=s.color;svg.appendChild(m);
         if(j===pts.length-1){
