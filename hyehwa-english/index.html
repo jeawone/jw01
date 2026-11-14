@@ -889,6 +889,45 @@ Now respond to the learner's last message.`;
       [`How do you say this in English?`,`이것을 영어로 어떻게 말해요?`]
     ]}
   ];
+  PHRASES.push(
+    {n:'구청·민원 응대',items:[
+      [`How can I help you today?`,`무엇을 도와드릴까요?`],
+      [`Could I see your ID, please?`,`신분증을 보여 주시겠어요?`],
+      [`Please fill out this form.`,`이 서식을 작성해 주세요.`],
+      [`This will take about ten minutes.`,`약 10분 걸립니다.`],
+      [`You will need to submit one more document.`,`서류를 한 가지 더 제출하셔야 해요.`],
+      [`Please take a number and wait for your turn.`,`번호표를 뽑고 순서를 기다려 주세요.`],
+      [`That service is handled by another office.`,`그 업무는 다른 기관에서 처리해요.`],
+      [`Let me explain the process step by step.`,`절차를 단계별로 설명드릴게요.`]
+    ]},
+    {n:'구청·귀빈 접견',items:[
+      [`Welcome to Seocho-gu. It's an honor to have you here.`,`서초구에 오신 것을 환영합니다. 모시게 되어 영광입니다.`],
+      [`I hope you had a pleasant trip.`,`즐거운 여행이었길 바랍니다.`],
+      [`Please allow me to introduce our team.`,`저희 팀을 소개하겠습니다.`],
+      [`We would like to explore ways to cooperate.`,`협력 방안을 모색하고 싶습니다.`],
+      [`Shall we begin the tour?`,`견학을 시작할까요?`],
+      [`Thank you for your warm hospitality.`,`따뜻한 환대에 감사드립니다.`],
+      [`Please feel free to ask any questions.`,`편하게 질문해 주세요.`]
+    ]},
+    {n:'구청·정책 설명',items:[
+      [`The goal of this policy is to improve residents' quality of life.`,`이 정책의 목표는 주민의 삶의 질 향상입니다.`],
+      [`Let me give you a brief overview.`,`간단히 개요를 말씀드리겠습니다.`],
+      [`This program has been running since last year.`,`이 사업은 작년부터 시행되고 있습니다.`],
+      [`We provide support for seniors and families with young children.`,`어르신과 영유아 가정을 지원합니다.`],
+      [`According to our survey, residents are highly satisfied.`,`조사에 따르면 주민 만족도가 높습니다.`],
+      [`One of the challenges is the limited budget.`,`과제 중 하나는 한정된 예산입니다.`],
+      [`We are using digital tools to make our services more efficient.`,`디지털 도구로 행정 서비스를 효율화하고 있습니다.`]
+    ]},
+    {n:'구청·전화 문의',items:[
+      [`Seocho District Office, how may I help you?`,`서초구청입니다, 무엇을 도와드릴까요?`],
+      [`Could you hold the line for a moment?`,`잠시만 기다려 주시겠어요?`],
+      [`Let me transfer you to the right department.`,`담당 부서로 연결해 드릴게요.`],
+      [`May I have your name and phone number?`,`성함과 연락처를 알려 주시겠어요?`],
+      [`Could you spell that for me, please?`,`철자를 불러 주시겠어요?`],
+      [`I'll get back to you by tomorrow.`,`내일까지 다시 연락드리겠습니다.`],
+      [`Thank you for calling. Have a nice day.`,`전화 주셔서 감사합니다. 좋은 하루 보내세요.`]
+    ]}
+  );
   let phCat=0;
   function openPhrases(){
     const box=$('phrases');box.hidden=false;box.textContent='';
@@ -951,6 +990,12 @@ Now respond to the learner's last message.`;
     '잡담·감정':{title:'파티에서 만난 동료',role:'a friendly new coworker at a company party, making small talk',me:'a colleague',open:`Hi, I don't think we've met. I'm Alex from the marketing team. How do you know everyone here?`},
     '못 알아들었을 때':{title:'말이 빠른 사람',role:'a fast-talking native speaker who uses a few idioms and speaks quickly while asking the learner for help with a plan, so the learner needs to ask for repetition or clarification',me:'someone who may need to ask for clarification',open:`Hey, so I was wondering if you could give me a hand with this thing tomorrow. It's kind of a last-minute deal, but no big deal, whenever works!`}
   };
+  Object.assign(ROLES,{
+    '구청·민원 응대':{title:'외국인 주민 민원 응대',role:'a foreign resident visiting a Korean district office for the first time to ask about an administrative matter such as address registration, a certificate, trash disposal rules or a parking permit. Speak simple but natural English and sometimes be confused by Korean bureaucratic terms',me:'a district office staff member helping the resident',open:`Hello, excuse me. I just moved to this neighborhood from Canada. Could you help me? I'm not sure what I need to do.`},
+    '구청·귀빈 접견':{title:'자매도시 대표단 접견',role:'the leader of a delegation from an overseas sister city visiting the district office',me:'a district office official hosting the delegation',open:`Good morning! Thank you so much for having us. We have been looking forward to this visit.`},
+    '구청·정책 설명':{title:'외국 기자에게 정책 설명',role:'a curious foreign journalist who asks thoughtful questions about local policies of the district such as welfare for seniors, childcare, urban planning and the digital transformation of public administration. Ask follow-up questions and sometimes press with tough questions about budget and results',me:'a district official explaining the policy',open:`Thanks for meeting with me. I'd like to understand how your district supports its residents. What is the most important policy you are working on right now?`},
+    '구청·전화 문의':{title:'민원 전화 응대',role:'a caller phoning the district office with a question or complaint, for example about a permit, noise or broken street lights. Be a little impatient and sometimes ask to be transferred',me:'a district office staff member answering the phone',open:`Hello? Is this the district office? I've been trying to get through for a while.`}
+  });
   let rp=store.get('hw.rp',null);
   function rpItems(){const c=rp&&PHRASES.find(x=>x.n===rp.cat);return c?c.items:[]}
   function startRoleplay(cat){
