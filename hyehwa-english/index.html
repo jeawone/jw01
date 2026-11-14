@@ -137,6 +137,7 @@ section.vocab h2{font-size:1rem;margin:0}
     <div class="quiz" id="log" hidden></div>
     <div class="quiz" id="daily" hidden></div>
     <div class="quiz" id="phrases" hidden></div>
+    <div class="quiz" id="notes" hidden></div>
     <div class="row"><button class="mini" id="resetChat">대화 새로 시작</button></div>
   </section>
 </div>
@@ -1156,6 +1157,7 @@ Now respond to the learner's last message.`;
       box.appendChild(el('div','small','정책을 등록하면 질문의 [정책명] 자리에 그 이름이 들어가요. 지금은 this program으로 표시돼요.'));
     }
     const pcb=el('button','btn','모의 기자회견 시작 (질문 6개)');pcb.onclick=startPc;box.appendChild(pcb);
+    const nb=el('button','btn ghost','회견 답변 노트 ('+notes.length+')');nb.onclick=renderNotes;box.appendChild(nb);
     QCARDS.forEach((g,gi)=>{
       const d=el('details');if(gi===0)d.open=true;
       d.appendChild(el('summary',null,g.g));
@@ -1328,6 +1330,7 @@ Now respond to the learner's last message.`;
       sp.appendChild(el('span','small','내 답변: '+(pcLast.answers[i]||'-')));
       if(typeof it.better==='string'){sp.appendChild(el('br'));sp.appendChild(el('span','en',it.better))}
       if(typeof it.tip==='string'){sp.appendChild(el('br'));sp.appendChild(el('span','small',it.tip))}
+      {const sv=el('button','mini','노트에 저장');sv.onclick=()=>{const ok=addNote(i);sv.textContent=ok?'저장함':'이미 저장돼 있어요';sv.disabled=true};sp.appendChild(el('br'));sp.appendChild(sv)}
       li.appendChild(sp);
       if(tts&&typeof it.better==='string'){const l=el('button','mini','듣기');l.onclick=()=>say(it.better,1);li.appendChild(l)}
       ul.appendChild(li);
@@ -1337,7 +1340,10 @@ Now respond to the learner's last message.`;
     const again=el('button','btn','다시 하기');again.onclick=startPc;
     const tr=el('button','btn ghost','점수 추이 보기');
     tr.onclick=()=>{renderLog();setTimeout(()=>$('log').scrollIntoView({behavior:'smooth',block:'start'}),50)};
-    row.appendChild(again);row.appendChild(tr);row.appendChild(close);box.appendChild(row);
+    const sa=el('button','btn ghost','모두 노트에 저장');
+    sa.onclick=()=>{let k=0;pcLast.qs.forEach((q,i)=>{if(addNote(i))k++});sa.textContent=k?k+'개 저장함':'이미 모두 저장돼 있어요';sa.disabled=true};
+    const nv=el('button','btn ghost','저장한 노트 보기');nv.onclick=()=>{renderNotes();setTimeout(()=>$('notes').scrollIntoView({behavior:'smooth',block:'start'}),50)};
+    row.appendChild(again);row.appendChild(sa);row.appendChild(nv);row.appendChild(tr);row.appendChild(close);box.appendChild(row);
   }
 
   /* ---- 회견 점수 추이 ---- */
@@ -1382,6 +1388,47 @@ Now respond to the learner's last message.`;
       sp.appendChild(document.createTextNode('  '+r.d.slice(5).replace('-','/')+(typeof r.p==='string'?' · '+r.p:'')));
       if(r.c||r.n||r.dp){sp.appendChild(el('br'));sp.appendChild(el('span','small','명료 '+(r.c||'-')+' · 자연 '+(r.n||'-')+' · 외교 '+(r.dp||'-')))}
       li.appendChild(sp);ul.appendChild(li);
+    });
+    box.appendChild(ul);
+  }
+
+  /* ---- 회견 답변 노트 ---- */
+  let notes=store.get('hw.notes',[]);
+  function addNote(i){
+    const d=pcRes&&pcRes.data;
+    const it=(d&&Array.isArray(d.items)?d.items:[]).find(x=>Number(x.q)===i+1)||{};
+    const n={q:pcLast.qs[i],a:pcLast.answers[i]||'',b:typeof it.better==='string'?it.better:'',t:typeof it.tip==='string'?it.tip:'',d:dstr(new Date()),p:pcLast.name};
+    if(notes.some(x=>x.q===n.q&&x.b===n.b&&x.a===n.a))return false;
+    notes.unshift(n);notes=notes.slice(0,30);store.set('hw.notes',notes);
+    return true;
+  }
+  function askNote(n){
+    if(busy){showNotice('혜화가 답하는 중이에요. 잠시 뒤에 다시 눌러 주세요.');return}
+    const pi=policies.findIndex(p=>polName(p)===n.p);
+    startRoleplay('구청·정책 설명',pi>=0?pi:null);
+    msgs=[{role:'tutor',text:n.q}];persist();renderThread();
+  }
+  function renderNotes(){
+    const box=$('notes');box.hidden=false;box.textContent='';
+    const top=el('div','meta');top.appendChild(el('b',null,'회견 답변 노트 ('+notes.length+' / 30)'));
+    const close=el('button','mini','닫기');close.onclick=()=>{if(tts)tts.stop().catch(()=>{});box.hidden=true};
+    top.appendChild(close);box.appendChild(top);
+    if(!notes.length){box.appendChild(el('div',null,'저장한 답변이 없어요. 모의 기자회견 결과에서 질문별 개선 답안을 노트에 저장해 보세요.'));return}
+    const ul=el('ul','vl pl');
+    notes.forEach((n,i)=>{
+      const li=el('li');const sp=el('span');
+      sp.appendChild(el('span','small',n.d.slice(5).replace('-','/')+' · '+n.p));sp.appendChild(el('br'));
+      sp.appendChild(el('span','en','Q. '+n.q));
+      if(n.a){sp.appendChild(el('br'));sp.appendChild(el('span','small','내 답변: '+n.a))}
+      if(n.b){sp.appendChild(el('br'));sp.appendChild(el('span',null,'개선: '+n.b))}
+      if(n.t){sp.appendChild(el('br'));sp.appendChild(el('span','small',n.t))}
+      li.appendChild(sp);
+      const acts=el('div','acts');
+      if(tts&&n.b){const l=el('button','mini','듣기');l.onclick=()=>say(n.b,1);acts.appendChild(l)}
+      if(n.b){const pr=el('button','mini','따라 말하기');pr.onclick=()=>{startPron();setTarget(n.b);$('pron').scrollIntoView({behavior:'smooth',block:'nearest'})};acts.appendChild(pr)}
+      const re=el('button','mini','다시 답해 보기');re.onclick=()=>askNote(n);acts.appendChild(re);
+      const dl=el('button','mini','삭제');dl.onclick=()=>{notes.splice(i,1);store.set('hw.notes',notes);renderNotes()};acts.appendChild(dl);
+      li.appendChild(acts);ul.appendChild(li);
     });
     box.appendChild(ul);
   }
