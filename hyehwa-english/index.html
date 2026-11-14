@@ -133,6 +133,7 @@ section.vocab h2{font-size:1rem;margin:0}
 
   <section class="vocab">
     <div class="vh"><h2>내 단어장</h2><div class="row"><button class="btn ghost" id="quizStart" type="button">복습 퀴즈</button><button class="btn ghost" id="fillStart" type="button">빈칸 퀴즈</button><button class="btn ghost" id="pronStart" type="button">발음 연습</button><button class="btn ghost" id="focusStart" type="button">단어로 대화</button><button class="btn ghost" id="logStart" type="button">연습 기록</button><button class="btn ghost" id="dailyStart" type="button">오늘의 표현</button><button class="btn ghost" id="phrasesStart" type="button">생활 표현집</button></div></div>
+    <div class="quiz" id="done"></div>
     <div class="quiz" id="rec" hidden></div>
     <ul class="vl" id="vocab"></ul>
     <div class="quiz" id="quiz" hidden></div>
@@ -697,6 +698,7 @@ Now respond to the learner's last message.`;
     journal.push(Object.assign({d:dstr(new Date()),k:k},data||{}));
     if(journal.length>600)journal=journal.slice(-600);
     store.set('hw.log',journal);
+    renderDone();
   }
   function lastAvg(k,f,n){
     const a=journal.filter(e=>e.k===k).slice(-n).map(f);
@@ -755,7 +757,7 @@ Now respond to the learner's last message.`;
     const reset=el('button','mini','기록 지우기');let armed=false;
     reset.onclick=()=>{
       if(!armed){armed=true;reset.textContent='정말 지울까요? 한 번 더 누르면 지워져요';return}
-      journal=[];store.set('hw.log',[]);renderLog();
+      journal=[];store.set('hw.log',[]);renderDone();renderLog();
     };
     box.appendChild(reset);
   }
@@ -1579,6 +1581,38 @@ Now respond to the learner's last message.`;
   }
   $('fillStart').onclick=startFill;
 
+  /* ---- 오늘의 복습 완료 ---- */
+  function renderDone(){
+    const box=$('done');if(!box)return;
+    box.textContent='';
+    const isRv=e=>(e.k==='quiz'||e.k==='daily'||e.k==='review'||e.k==='fill')&&e.n>0;
+    const t=dstr(new Date());
+    const ev=journal.filter(e=>e.d===t&&isRv(e));
+    const q=ev.reduce((a,e)=>a+e.n,0),ok=ev.reduce((a,e)=>a+(e.r||0),0);
+    const goal=store.get('hw.goal',10);
+    const done=q>=goal;
+    const per={};
+    journal.forEach(e=>{if(isRv(e))per[e.d]=(per[e.d]||0)+e.n});
+    let streak=0;
+    {const d=new Date();if((per[dstr(d)]||0)<goal)d.setDate(d.getDate()-1);while((per[dstr(d)]||0)>=goal){streak++;d.setDate(d.getDate()-1)}}
+    const top=el('div','meta');
+    top.appendChild(el('b',null,'오늘의 복습'));
+    const st=el('span',done?'ok':'small',done?'✓ 완료':'진행 중');
+    top.appendChild(st);box.appendChild(top);
+    const bar=el('div','bar');const fill=el('i');fill.style.width=Math.min(100,Math.round(q/goal*100))+'%';bar.appendChild(fill);box.appendChild(bar);
+    box.appendChild(el('div',null,q+' / '+goal+'문제 · '+ev.length+'회 · 맞힌 문제 '+ok+'개'));
+    if(done)box.appendChild(el('div','ok','오늘 목표를 달성했어요. 수고하셨어요!'));
+    else box.appendChild(el('div','small',ev.length?'목표까지 '+(goal-q)+'문제 남았어요. 복습 퀴즈나 빈칸 퀴즈를 풀어 보세요.':'복습 퀴즈, 오늘의 표현, 빈칸 퀴즈를 푸는 대로 여기에 쌓여요.'));
+    const row=el('div','row');
+    if(streak)row.appendChild(el('span','small','연속 달성 '+streak+'일'));
+    const lb=el('label','toggle','하루 목표 ');
+    const sel=el('select');sel.id='goalSel';sel.setAttribute('aria-label','하루 복습 목표 문제 수');
+    [5,10,20].forEach(n=>{const o=el('option',null,n+'문제');o.value=String(n);if(n===goal)o.selected=true;sel.appendChild(o)});
+    sel.onchange=()=>{store.set('hw.goal',+sel.value);renderDone()};
+    lb.appendChild(sel);row.appendChild(lb);
+    box.appendChild(row);
+  }
+
   /* ---- 복습 추이 ---- */
   function drawReviewTrend(box){
     const S=[
@@ -1797,7 +1831,7 @@ Now respond to the learner's last message.`;
     };
   }
 
-  renderControls();renderStarters();renderThread();renderVocab();renderFocus();renderRp();renderPc();initDone=true;
+  renderControls();renderStarters();renderThread();renderVocab();renderFocus();renderRp();renderPc();renderDone();initDone=true;
 
   if(window.claude&&window.claude.use){
     window.claude.use('sample').then(s=>{
