@@ -454,10 +454,33 @@ Now respond to the learner's last message.`;
       if(P.refs.rec){P.refs.rec.textContent=P.listening?'멈추기':'따라 말하기';P.refs.rec.classList.toggle('rec',P.listening)}
       if(was&&!P.listening){
         const h=P.heard.trim();
-        if(h){P.result=compare(P.target,h)}else{P.msg='목소리가 잘 들리지 않았어요. 마이크 가까이에서 다시 해 보세요.'}
+        if(h){P.result=compare(P.target,h);const R0=P.result,T0=P.target,P0=P;setTimeout(()=>autoAddMissed(R0,T0,P0),0)}else{P.msg='목소리가 잘 들리지 않았어요. 마이크 가까이에서 다시 해 보세요.'}
         renderPron();
       }
     });
+  }
+  async function autoAddMissed(R,T,P0){
+    const have=v=>vocab.some(x=>x.split('=')[0].trim().toLowerCase()===v);
+    const words=Array.from(new Set(R.tokens.filter((w,k)=>!R.ok[k]).map(w=>norm(w).join(' ')).filter(w=>w.length>=3))).filter(w=>!have(w)).slice(0,5);
+    if(!words.length)return;
+    let meanings={};
+    if(sample){
+      try{
+        const r=await sample.json(`For each English word below, give a short Korean meaning (1 to 4 words) as it is used in the sentence. Sentence: ${T}\nWords: ${JSON.stringify(words)}\nReply with only a JSON object that maps each word to its Korean meaning.`,{cache:false,modelTier:'quick'});
+        if(r&&typeof r==='object')meanings=r;
+      }catch(e){}
+    }
+    const added=[];let noMeaning=0;
+    words.forEach(w=>{
+      const ko=typeof meanings[w]==='string'?meanings[w].trim():'';
+      if(!ko)noMeaning++;
+      vocab.unshift(ko?(w+' = '+ko):w);added.push(w);
+    });
+    store.set('hw.vocab',vocab);renderVocab();
+    if(P&&P===P0){
+      P.added='틀린 단어 '+added.length+'개를 단어장에 담았어요: '+added.join(', ')+(noMeaning?' (뜻을 못 가져온 '+noMeaning+'개는 퀴즈에서 빠져요)':'');
+      if(!P.listening)renderPron();
+    }
   }
   function startPron(){
     const c=candidates();
@@ -467,13 +490,13 @@ Now respond to the learner's last message.`;
   function setTarget(s){
     if(dict&&dict.active()){dictMode='x';dict.stop()}
     if(tts)tts.stop().catch(()=>{});
-    P.target=s;P.heard='';P.result=null;P.msg='';P.listening=false;renderPron();
+    P.target=s;P.heard='';P.result=null;P.msg='';P.added='';P.listening=false;renderPron();
   }
   function say(text,rate){if(tts)tts.speak(text,{language:'en',rate:rate}).catch(()=>{})}
   function recToggle(){
     if(!dict)return;
     if(dict.active()){dict.stop();return}
-    dictMode='pron';P.heard='';P.result=null;P.msg='';
+    dictMode='pron';P.heard='';P.result=null;P.msg='';P.added='';
     if(P.refs.heard)P.refs.heard.textContent='';
     if(tts)tts.stop().catch(()=>{});
     dict.start({language:'en'}).catch(e=>{
@@ -542,6 +565,7 @@ Now respond to the learner's last message.`;
         box.appendChild(mr);
       }
     }
+    if(P.added)box.appendChild(el('div','notice',P.added));
     box.appendChild(el('div','small','음성 인식이 알아들은 단어를 비교하는 방식이라, 정확한 발음 채점은 아니에요. 또렷하게 말하는 연습용으로 써 주세요.'));
   }
   $('pronStart').onclick=startPron;
